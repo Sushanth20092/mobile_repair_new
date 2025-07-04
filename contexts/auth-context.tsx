@@ -1,0 +1,96 @@
+"use client"
+
+import type React from "react"
+import { createContext, useContext, useState, useEffect } from "react"
+import { supabase } from "@/lib/api"
+
+type Role = "customer" | "agent" | "admin"
+
+export interface User {
+  id: string
+  name: string
+  email: string
+  role: Role
+}
+
+interface AuthContextProps {
+  user: User | null
+  login: (email: string, password: string) => Promise<void>
+  signup: (data: { name: string; email: string; password: string; role: Role }) => Promise<void>
+  logout: () => Promise<void>
+  forgotPassword: (email: string) => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextProps | undefined>(undefined)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { id, email, user_metadata } = session.user
+        setUser({
+          id,
+          name: user_metadata?.name || "",
+          email: email!,
+          role: user_metadata?.role || "customer",
+        })
+      } else {
+        setUser(null)
+      }
+    })
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const { id, email, user_metadata } = session.user
+        setUser({
+          id,
+          name: user_metadata?.name || "",
+          email: email!,
+          role: user_metadata?.role || "customer",
+        })
+      }
+    })
+    return () => {
+      listener?.subscription.unsubscribe()
+    }
+  }, [])
+
+  const login = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) throw new Error(error.message)
+  }
+
+  const signup = async ({ name, email, password, role }: { name: string; email: string; password: string; role: Role }) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name, role },
+        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+      },
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  const logout = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+  }
+
+  const forgotPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/reset` : undefined,
+    })
+    if (error) throw new Error(error.message)
+  }
+
+  return <AuthContext.Provider value={{ user, login, signup, logout, forgotPassword }}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider")
+  return ctx
+}
