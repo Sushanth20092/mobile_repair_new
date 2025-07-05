@@ -3,6 +3,13 @@ const { supabase } = require("../supabaseClient")
 const { auth } = require("../middleware/auth")
 const router = express.Router()
 
+// Get all cities (public endpoint for registration)
+router.get("/public", async (req, res) => {
+  const { data, error } = await supabase.from("cities").select("*").eq("is_active", true)
+  if (error) return res.status(400).json({ message: error.message })
+  res.json({ cities: data })
+})
+
 // Get all cities
 router.get("/", auth, async (req, res) => {
   const { data, error } = await supabase.from("cities").select("*")

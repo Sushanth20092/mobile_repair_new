@@ -42,16 +42,12 @@ const services = [
 ]
 
 export default function HomePage() {
-  const [selectedCity, setSelectedCity] = useState("")
   const { theme, setTheme } = useTheme()
   const { user, logout } = useAuth()
   const [mounted, setMounted] = useState(false)
-  const [showCityError, setShowCityError] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
   const [cities, setCities] = useState<{ id: string, name: string, pincodes?: string[] }[]>([])
-
-
   const [citiesLoading, setCitiesLoading] = useState(true)
 
   useEffect(() => {
@@ -72,7 +68,6 @@ export default function HomePage() {
     }
     fetchCities()
   }, [])
-  
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId)
@@ -82,44 +77,14 @@ export default function HomePage() {
   }
 
   const handleLoginRedirect = () => {
-    if (!selectedCity) {
-      setShowCityError(true)
-      toast({
-        title: "City Selection Required",
-        description: "Please select your city before proceeding to login.",
-        variant: "destructive",
-      })
-      return
-    }
-    setShowCityError(false)
     router.push("/auth/login")
   }
 
   const handleRepairNow = () => {
-    if (!selectedCity) {
-      setShowCityError(true)
-      toast({
-        title: "City Selection Required",
-        description: "Please select your city before proceeding.",
-        variant: "destructive",
-      })
-      return
-    }
-    setShowCityError(false)
-    
-    if (!user) {
-      router.push("/auth/login")
+    if (user) {
+      router.push("/customer/dashboard")
     } else {
-      router.push("/customer/book-repair")
-    }
-  }
-
-  // Hide error message when city is selected
-  const handleCityChange = (value: string) => {
-    setSelectedCity(value)
-    if (value) {
-      setShowCityError(false)
-      localStorage.setItem("selectedCity", value)
+      router.push("/auth/login")
     }
   }
 
@@ -209,9 +174,9 @@ export default function HomePage() {
             className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12"
           >
             <div className="flex flex-col items-center">
-              <Select value={selectedCity} onValueChange={handleCityChange}>
+              <Select value="" onValueChange={() => {}}>
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder={citiesLoading ? "Loading cities..." : "Select your city"} />
+                  <SelectValue placeholder={citiesLoading ? "Loading cities..." : "Available Cities"} />
                 </SelectTrigger>
                 <SelectContent>
                   {cities.map((city) => (
@@ -221,9 +186,6 @@ export default function HomePage() {
                   ))}
                 </SelectContent>
               </Select>
-              {showCityError && (
-                <p className="text-sm text-destructive mt-2">Please select the city</p>
-              )}
             </div>
 
             <Button
@@ -354,7 +316,7 @@ export default function HomePage() {
               size="lg" 
               variant="secondary" 
               className="px-8"
-              onClick={handleLoginRedirect}
+              onClick={handleRepairNow}
             >
               Start Repair Process
             </Button>
@@ -398,19 +360,20 @@ export default function HomePage() {
             <div>
               <h3 className="font-semibold mb-4">Support</h3>
               <ul className="space-y-2 text-muted-foreground">
-                <li>Help Center</li>
-                <li>Track Repair</li>
-                <li>Warranty</li>
                 <li>Contact Us</li>
+                <li>FAQ</li>
+                <li>Warranty</li>
+                <li>Track Repair</li>
               </ul>
             </div>
 
             <div>
-              <h3 className="font-semibold mb-4">Contact</h3>
+              <h3 className="font-semibold mb-4">Connect</h3>
               <ul className="space-y-2 text-muted-foreground">
-                <li>support@repairhub.com</li>
-                <li>+91 98765 43210</li>
-                <li>Available 9 AM - 6 PM</li>
+                <li>About Us</li>
+                <li>Careers</li>
+                <li>Privacy Policy</li>
+                <li>Terms of Service</li>
               </ul>
             </div>
           </div>

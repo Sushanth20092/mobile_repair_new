@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,19 +17,26 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 
+interface City {
+  id: string
+  name: string
+  state: string
+}
+
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("login")
   const router = useRouter()
-  const { login, signup, forgotPassword } = useAuth()
+  const { login, signup, forgotPassword, user } = useAuth()
   const { toast } = useToast()
+  const [cities, setCities] = useState<City[]>([])
 
   // Login form state
   const [loginData, setLoginData] = useState({
     email: "",
     password: "",
-    role: "customer",
+    role: "user",
   })
 
   // Register form state
@@ -39,12 +46,45 @@ export default function LoginPage() {
     phone: "",
     password: "",
     confirmPassword: "",
-    role: "customer",
+    role: "user",
     address: "",
-    city: "",
+    city_id: "",
     pincode: "",
     agreeToTerms: false,
   })
+
+  // Fetch cities on component mount
+  useEffect(() => {
+    const fetchCities = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/cities/public`)
+        if (response.ok) {
+          const data = await response.json()
+          setCities(data.cities || [])
+        }
+      } catch (error) {
+        console.error('Error fetching cities:', error)
+      }
+    }
+    fetchCities()
+  }, [])
+
+  // Handle redirection when user state changes (after login)
+  useEffect(() => {
+    if (user) {
+      // User is logged in, redirect based on role
+      switch (user.role) {
+        case "admin":
+          router.push("/admin/dashboard")
+          break
+        case "agent":
+          router.push("/agent/dashboard")
+          break
+        default:
+          router.push("/customer/dashboard")
+      }
+    }
+  }, [user, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -54,23 +94,14 @@ export default function LoginPage() {
         toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" })
         return
       }
+      
       await login(loginData.email, loginData.password)
       toast({ title: "Success", description: "Logged in successfully" })
-      // Redirect based on role
-      // Fetch user from context after login
-      setTimeout(() => {
-        const user = JSON.parse(localStorage.getItem('supabase.auth.token') || '{}')
-        switch (user?.user_metadata?.role) {
-          case "admin":
-            router.push("/admin/dashboard")
-            break
-          case "agent":
-            router.push("/agent/dashboard")
-            break
-          default:
-            router.push("/customer/dashboard")
-        }
-      }, 500)
+      
+      // The auth context will automatically update the user state
+      // We can use the user state directly for redirection
+      // The onAuthStateChange listener in the context will handle this
+      
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Invalid credentials", variant: "destructive" })
     } finally {
@@ -82,7 +113,7 @@ export default function LoginPage() {
     e.preventDefault()
     setIsLoading(true)
     try {
-      if (!registerData.name || !registerData.email || !registerData.password) {
+      if (!registerData.name || !registerData.email || !registerData.password || !registerData.city_id) {
         toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" })
         return
       }
@@ -98,16 +129,67 @@ export default function LoginPage() {
         toast({ title: "Error", description: "Please agree to terms and conditions", variant: "destructive" })
         return
       }
-      await signup({
+      
+      console.log('Sending registration request:', {
         name: registerData.name,
         email: registerData.email,
-        password: registerData.password,
-        role: registerData.role as any,
+        phone: registerData.phone,
+        city_id: registerData.city_id,
+        role: registerData.role
       })
-      toast({ title: "Success", description: "Account created! Please check your email to verify." })
+      
+      // Call backend registration endpoint directly
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: registerData.name,
+          email: registerData.email,
+          phone: registerData.phone,
+          password: registerData.password,
+          city_id: registerData.city_id,
+          role: registerData.role,
+        }),
+      })
+
+      console.log('Registration response status:', response.status)
+      
+      const data = await response.json()
+      console.log('Registration response data:', data)
+      
+      if (!response.ok) {
+        // Handle specific error cases
+        if (response.status === 409) {
+          // Email already exists
+          toast({ 
+            title: "Email Already Exists", 
+            description: "An account with this email already exists. Please use a different email or try logging in.", 
+            variant: "destructive" 
+          })
+          // Switch to login tab to help user
+          setActiveTab("login")
+          // Pre-fill the email in login form
+          setLoginData(prev => ({ ...prev, email: registerData.email }))
+        } else {
+          throw new Error(data.message || 'Registration failed')
+        }
+        return
+      }
+
+      toast({ 
+        title: "Success", 
+        description: "Account created! Please check your email to verify. You'll be redirected to the homepage after confirmation." 
+      })
       setActiveTab("login")
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Registration failed. Please try again.", variant: "destructive" })
+      console.error('Registration error:', error)
+      toast({ 
+        title: "Error", 
+        description: error.message || "Registration failed. Please try again.", 
+        variant: "destructive" 
+      })
     } finally {
       setIsLoading(false)
     }
@@ -206,7 +288,7 @@ export default function LoginPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="customer">Customer</SelectItem>
+                        <SelectItem value="user">User</SelectItem>
                         <SelectItem value="agent">Agent</SelectItem>
                         <SelectItem value="admin">Admin</SelectItem>
                       </SelectContent>
@@ -275,13 +357,22 @@ export default function LoginPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="city">City</Label>
-                      <Input
-                        id="city"
-                        placeholder="Enter city"
-                        value={registerData.city}
-                        onChange={(e) => setRegisterData({ ...registerData, city: e.target.value })}
-                      />
+                      <Label htmlFor="city">City *</Label>
+                      <Select
+                        value={registerData.city_id}
+                        onValueChange={(value) => setRegisterData({ ...registerData, city_id: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select your city" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.map((city) => (
+                            <SelectItem key={city.id} value={city.id}>
+                              {city.name}, {city.state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
