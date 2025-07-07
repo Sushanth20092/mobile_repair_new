@@ -278,7 +278,7 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  {/* <div className="space-y-2">
                     <Label htmlFor="role">Login as</Label>
                     <Select
                       value={loginData.role}
@@ -293,7 +293,7 @@ export default function LoginPage() {
                         <SelectItem value="admin">Admin</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
+                  </div> */}
 
                   <div className="flex items-center justify-between">
                     <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">

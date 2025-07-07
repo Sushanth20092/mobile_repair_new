@@ -117,14 +117,14 @@ router.post("/register", registerValidation, async (req, res) => {
     console.log('Attempting to register user:', { email, name, phone, city_id, role })
     
     // Register user in Supabase Auth, include city_id in user metadata
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
       options: { 
         data: { name, phone, role, city_id },
         emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback`
       }
-    })
+  })
     
     if (error) {
       console.error('Supabase auth error:', error)

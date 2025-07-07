@@ -27,16 +27,18 @@ export default function AgentApplicationPage() {
     phone: "",
     shopName: "",
     shopAddress: "",
-    city: "",
+    city_id: "",
     pincode: "",
     experience: "",
     specializations: [] as string[],
     idProof: null as string | null,
     shopImages: [] as string[],
     agreeToTerms: false,
+    
   })
   const [cities, setCities] = useState<{ id: string, name: string }[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
+  const [applications, setApplications] = useState([]);
 
   const specializations = [
     "Mobile Phone Repair",
@@ -50,7 +52,7 @@ export default function AgentApplicationPage() {
   useEffect(() => {
     const fetchCities = async () => {
       try {
-        const { data } = await supabase.from('cities').select('*')
+        const { data } = await supabase.from('cities').select('id, name')
         setCities(data || [])
       } catch {
         setCities([])
@@ -60,6 +62,10 @@ export default function AgentApplicationPage() {
     }
     fetchCities()
   }, [])
+
+  useEffect(() => {
+    supabase.from('agent_applications').select('*').then(({ data }) => setApplications(data || []));
+  }, []);
 
   const handleSpecializationToggle = (specialization: string) => {
     const newSpecializations = formData.specializations.includes(specialization)
@@ -104,11 +110,28 @@ export default function AgentApplicationPage() {
     setFormData({ ...formData, shopImages: [...formData.shopImages, ...uploadedUrls] })
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setIsLoading(true)
     try {
       const { data, error } = await supabase.from('agent_applications').insert([
-        { ...formData, shopImages: formData.shopImages, idProof: formData.idProof }
+        {
+          // user_id can be set if you have auth, otherwise leave null
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          shop_name: formData.shopName,
+          shop_address: formData.shopAddress,
+          city_id: formData.city_id,
+          pincode: formData.pincode,
+          experience: formData.experience,
+          specializations: formData.specializations,
+          id_proof: formData.idProof,
+          shop_images: formData.shopImages,
+          agree_to_terms: formData.agreeToTerms,
+          
+          // status, reviewed_by, reviewed_at, created_at, updated_at are handled by default
+        }
       ])
       if (error) throw error
       toast({ title: "Success", description: "Application submitted!" })
@@ -118,6 +141,11 @@ export default function AgentApplicationPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  function getCityName(city_id: string) {
+    const city = cities.find(c => c.id === city_id);
+    return city ? city.name : '';
   }
 
   return (
@@ -210,25 +238,19 @@ export default function AgentApplicationPage() {
                     <div className="space-y-2">
                       <Label htmlFor="city">City *</Label>
                       <Select
-                        value={formData.city}
-                        onValueChange={(value) => setFormData({ ...formData, city: value })}
+                        value={formData.city_id}
+                        onValueChange={value => setFormData({ ...formData, city_id: value })}
                         required
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder={citiesLoading ? "Loading cities..." : "Select city"} />
+                          <SelectValue placeholder={cities.length === 0 ? "Loading cities..." : "Select city"} />
                         </SelectTrigger>
                         <SelectContent>
-                          {citiesLoading ? (
-                            <div>Loading cities...</div>
-                          ) : cities.length === 0 ? (
-                            <div>No cities available.</div>
-                          ) : (
-                            cities.map((city) => (
-                              <SelectItem key={city.id} value={city.name}>
-                                {city.name}
-                              </SelectItem>
-                            ))
-                          )}
+                          {cities.map(city => (
+                            <SelectItem key={city.id} value={city.id}>
+                              {city.name}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>

@@ -65,6 +65,7 @@ export default function AdminDashboard() {
   const [reassignAgent, setReassignAgent] = useState("")
   const [showAddDevice, setShowAddDevice] = useState(false)
   const [deviceForm, setDeviceForm] = useState({ category: "", brand: "", model: "" })
+  const [cities, setCities] = useState<{ id: string, name: string }[]>([])
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -112,30 +113,83 @@ export default function AdminDashboard() {
     }
   }, [])
 
+  useEffect(() => {
+    supabase.from('cities').select('id, name').then(({ data }) => setCities(data || []))
+  }, [])
+
   const handleLogout = () => {
     logout()
     router.push("/")
   }
 
-  const handleApproveAgent = (requestId: string) => {
-    setAgentRequests((requests) =>
-      requests.map((request) => (request.id === requestId ? { ...request, status: "approved" } : request)),
-    )
-    toast({
-      title: "Agent Approved",
-      description: "Agent request has been approved successfully",
-    })
+  const handleApproveAgent = async (requestId: string) => {
+    try {
+      // Find the application
+      const application = agentRequests.find((req) => req.id === requestId)
+      if (!application) return
+      // Insert into agents table
+      const { error: insertError } = await supabase.from('agents').insert([
+        {
+          user_id: application.user_id,
+          name: application.name,
+          email: application.email,
+          phone: application.phone,
+          shop_name: application.shop_name,
+          shop_address: application.shop_address,
+          city_id: application.city_id,
+          pincode: application.pincode,
+          experience: application.experience,
+          specializations: application.specializations,
+          id_proof: application.id_proof,
+          shop_images: application.shop_images,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+      ])
+      if (insertError) throw insertError
+      // Update application status
+      const { error: updateError } = await supabase.from('agent_applications').update({
+        status: 'approved',
+        reviewed_by: user?.id || null,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId)
+      if (updateError) throw updateError
+      toast({
+        title: "Agent Approved",
+        description: "Agent request has been approved successfully",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to approve agent application.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const handleRejectAgent = (requestId: string) => {
-    setAgentRequests((requests) =>
-      requests.map((request) => (request.id === requestId ? { ...request, status: "rejected" } : request)),
-    )
-    toast({
-      title: "Agent Rejected",
-      description: "Agent request has been rejected",
-      variant: "destructive",
-    })
+  const handleRejectAgent = async (requestId: string) => {
+    try {
+      const { error } = await supabase.from('agent_applications').update({
+        status: 'rejected',
+        reviewed_by: user?.id || null,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', requestId)
+      if (error) throw error
+      toast({
+        title: "Agent Rejected",
+        description: "Agent request has been rejected",
+        variant: "destructive",
+      })
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reject agent application.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleReassignBooking = (bookingId: string) => {
@@ -204,6 +258,11 @@ export default function AdminDashboard() {
       default:
         return <Clock className="h-4 w-4" />
     }
+  }
+
+  const getCityName = (city_id: string) => {
+    const city = cities.find(c => c.id === city_id)
+    return city ? city.name : ''
   }
 
   const filteredRequests = agentRequests.filter((request: any) => {
@@ -410,7 +469,7 @@ export default function AdminDashboard() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
                             <p className="flex items-center gap-1">
                               <Building className="h-3 w-3" />
-                              <strong>Shop:</strong> {request.shopName}
+                              <strong>Shop:</strong> {request.shop_name}
                             </p>
                             <p className="flex items-center gap-1">
                               <Mail className="h-3 w-3" />
@@ -422,7 +481,7 @@ export default function AdminDashboard() {
                             </p>
                             <p className="flex items-center gap-1">
                               <MapPin className="h-3 w-3" />
-                              <strong>City:</strong> {request.city}
+                              <strong>City:</strong> {getCityName(request.city_id)}
                             </p>
                             <p>
                               <strong>Experience:</strong> {request.experience} years

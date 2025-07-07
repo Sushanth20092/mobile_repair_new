@@ -12,6 +12,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/api"
+import { useAgentStatus } from '@/hooks/use-agent-status'
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -43,9 +44,24 @@ export default function AgentDashboard() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
+  const { status: agentStatus, loading: statusLoading } = useAgentStatus(user?.id)
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) {
+      router.replace('/auth/login')
+      return
+    }
+    if (user.role !== 'agent') {
+      router.replace('/')
+      return
+    }
+    if (!statusLoading && agentStatus !== 'approved') {
+      router.replace('/agent/waiting-approval')
+    }
+  }, [user, agentStatus, statusLoading, router])
 
   useEffect(() => {
     const fetchJobs = async () => {
