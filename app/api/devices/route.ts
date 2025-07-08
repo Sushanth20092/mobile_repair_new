@@ -5,7 +5,7 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 export async function POST(req: NextRequest) {
   try {
-    const { category_id, model_name, brand } = await req.json();
+    const { category_id, model_name, brand, image = null, common_faults = null } = await req.json();
     if (!category_id || !model_name || !brand) {
       return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
     }
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     // 3. Insert device
     const { data: device, error: deviceError } = await supabase
       .from('devices')
-      .insert([{ category_id, model_id, brand }])
+      .insert([{ category_id, model_id, brand, image, common_faults }])
       .select()
       .maybeSingle();
     if (deviceError) {

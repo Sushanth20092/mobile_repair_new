@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -63,6 +63,11 @@ export default function AdminDashboard() {
   const [models, setModels] = useState<Model[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
   const [modelLoading, setModelLoading] = useState(false);
+
+  const [showAddCity, setShowAddCity] = useState(false);
+  const [cityForm, setCityForm] = useState({ name: "", state: "", pincodes: "", delivery_charges_standard: "", delivery_charges_express: "" });
+  const [addingCity, setAddingCity] = useState(false);
+  const addCityDialogRef = useRef(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -311,7 +316,7 @@ export default function AdminDashboard() {
 
   const handleAddDevice = async () => {
     setBrandError("");
-    let modelId = deviceForm.model;
+    let modelName = deviceForm.model;
     if (deviceForm.model === "__new__") {
       // Check if model exists for this category
       const { data: existing, error: existErr } = await supabase.from('models').select('*').eq('name', newBrand.trim()).eq('category_id', deviceForm.category);
@@ -320,7 +325,7 @@ export default function AdminDashboard() {
         return;
       }
       if (existing && existing.length > 0) {
-        modelId = existing[0].id;
+        modelName = existing[0].name;
       } else {
         // Insert new model
         const { data: inserted, error: insertErr } = await supabase.from('models').insert([{ name: newBrand.trim(), category_id: deviceForm.category }]).select().single();
@@ -328,10 +333,10 @@ export default function AdminDashboard() {
           toast({ title: "Error", description: insertErr.message, variant: "destructive" });
           return;
         }
-        modelId = inserted.id;
+        modelName = inserted.name;
       }
     }
-    if (!deviceForm.category || !modelId || !deviceForm.brand) {
+    if (!deviceForm.category || !modelName || !deviceForm.brand) {
       toast({ title: "Error", description: "Please fill all fields", variant: "destructive" });
       return;
     }
@@ -342,13 +347,13 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category_id: deviceForm.category,
-          model_name: deviceForm.model === "__new__" ? newBrand.trim() : (models.find(m => m.id === deviceForm.model)?.name || ""),
+          model_name: modelName,
           brand: deviceForm.brand.trim(),
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 409) {
+        if (data.message && data.message.toLowerCase().includes("duplicate")) {
           setBrandError("Device with this category, brand, and model already exists.");
           toast({ title: "Already Exists", description: "This device already exists.", variant: "destructive" });
         } else {
@@ -363,9 +368,44 @@ export default function AdminDashboard() {
       setNewBrand("");
       setAddingDevice(false);
       setBrandError("");
+      // Optionally: update device list here if you add a device list in the future
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to add device", variant: "destructive" });
       setAddingDevice(false);
+    }
+  };
+
+  const handleAddCity = async () => {
+    setAddingCity(true);
+    const pincodesArr = cityForm.pincodes.split(",").map(p => p.trim()).filter(Boolean);
+    const delivery_charges_standard = cityForm.delivery_charges_standard ? parseFloat(cityForm.delivery_charges_standard) : 50;
+    const delivery_charges_express = cityForm.delivery_charges_express ? parseFloat(cityForm.delivery_charges_express) : 100;
+    try {
+      const res = await fetch("/api/admin/add-city", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: cityForm.name.trim(),
+          state: cityForm.state.trim(),
+          pincodes: pincodesArr,
+          delivery_charges_standard,
+          delivery_charges_express,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Error", description: data.message || "Failed to add city", variant: "destructive" });
+        setAddingCity(false);
+        return;
+      }
+      toast({ title: "City Added", description: `${cityForm.name} added successfully` });
+      setShowAddCity(false);
+      setCityForm({ name: "", state: "", pincodes: "", delivery_charges_standard: "", delivery_charges_express: "" });
+      setAddingCity(false);
+      // Optionally: refresh city list here
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add city", variant: "destructive" });
+      setAddingCity(false);
     }
   };
 
@@ -418,13 +458,13 @@ export default function AdminDashboard() {
                   disabled={!deviceForm.category || modelLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={modelLoading ? "Loading..." : "Select model"} />
+                    <SelectValue placeholder={modelLoading ? "Loading..." : "Select brand"} />
                   </SelectTrigger>
                   <SelectContent>
                     {models.map(model => (
                       <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
                     ))}
-                    <SelectItem value="__new__">Add new model...</SelectItem>
+                    <SelectItem value="__new__">Add new brand...</SelectItem>
                   </SelectContent>
                 </Select>
                 {deviceForm.model === "__new__" && (
@@ -435,7 +475,7 @@ export default function AdminDashboard() {
                     className={brandError ? "border-red-500" : ""}
                   />
                 )}
-                <Input placeholder="Brand name" value={deviceForm.brand} onChange={e => setDeviceForm(f => ({ ...f, brand: e.target.value }))} />
+                <Input placeholder="model name" value={deviceForm.brand} onChange={e => setDeviceForm(f => ({ ...f, brand: e.target.value }))} />
                 {brandError && <div className="text-red-500 text-sm">{brandError}</div>}
               </div>
               <DialogFooter>
@@ -447,6 +487,32 @@ export default function AdminDashboard() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Add City Button */}
+        <div className="flex justify-end mb-4">
+          <Button variant="default" onClick={() => setShowAddCity(true)}>+ Add City</Button>
+        </div>
+        <Dialog open={showAddCity} onOpenChange={setShowAddCity}>
+          <DialogTrigger asChild></DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add City</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input ref={addCityDialogRef} placeholder="City name" value={cityForm.name} onChange={e => setCityForm(f => ({ ...f, name: e.target.value }))} />
+              <Input placeholder="State" value={cityForm.state} onChange={e => setCityForm(f => ({ ...f, state: e.target.value }))} />
+              <Input placeholder="Pincodes (comma separated)" value={cityForm.pincodes} onChange={e => setCityForm(f => ({ ...f, pincodes: e.target.value }))} />
+              <Input placeholder="Delivery Charge Standard (default 50)" type="number" value={cityForm.delivery_charges_standard} onChange={e => setCityForm(f => ({ ...f, delivery_charges_standard: e.target.value }))} />
+              <Input placeholder="Delivery Charge Express (default 100)" type="number" value={cityForm.delivery_charges_express} onChange={e => setCityForm(f => ({ ...f, delivery_charges_express: e.target.value }))} />
+            </div>
+            <DialogFooter>
+              <Button onClick={handleAddCity} disabled={addingCity}>{addingCity ? "Adding..." : "Add City"}</Button>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -792,7 +858,17 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Add city cards here */}
+                  {cities.map((city) => (
+                    <div key={city.id} className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg flex justify-between items-center">
+                      <div>
+                        <h4 className="font-semibold">{city.name}</h4>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline">Edit</Button>
+                        <Button size="sm" variant="outline" className="text-red-500">Delete</Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
