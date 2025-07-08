@@ -34,19 +34,8 @@ import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import { supabase } from "@/lib/api"
 
-const deviceCategories = [
-  { id: "mobile", name: "Mobile Phones" },
-  { id: "tablet", name: "Tablets" },
-  { id: "laptop", name: "Laptops" },
-  { id: "smartwatch", name: "Smartwatches" },
-]
-
-const brands = {
-  mobile: ["Apple", "Samsung", "OnePlus", "Xiaomi", "Google", "Oppo", "Vivo"],
-  tablet: ["Apple", "Samsung", "Lenovo", "Huawei"],
-  laptop: ["Apple", "Dell", "HP", "Lenovo", "Asus"],
-  smartwatch: ["Apple", "Samsung", "Fitbit", "Garmin"],
-}
+type Category = { id: string; name: string };
+type Model = { id: string; name: string; category_id: string };
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth()
@@ -65,7 +54,15 @@ export default function AdminDashboard() {
   const [reassignAgent, setReassignAgent] = useState("")
   const [showAddDevice, setShowAddDevice] = useState(false)
   const [deviceForm, setDeviceForm] = useState({ category: "", brand: "", model: "" })
+  const [newBrand, setNewBrand] = useState("");
+  const [addingDevice, setAddingDevice] = useState(false);
+  const [brandError, setBrandError] = useState("");
   const [cities, setCities] = useState<{ id: string, name: string }[]>([])
+
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -117,6 +114,26 @@ export default function AdminDashboard() {
     supabase.from('cities').select('id, name').then(({ data }) => setCities(data || []))
   }, [])
 
+  useEffect(() => {
+    setCategoryLoading(true);
+    supabase.from('categories').select('*').then(({ data }) => {
+      setCategories(data || []);
+      setCategoryLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (deviceForm.category) {
+      setModelLoading(true);
+      supabase.from('models').select('*').eq('category_id', deviceForm.category).then(({ data }) => {
+        setModels(data || []);
+        setModelLoading(false);
+      });
+    } else {
+      setModels([]);
+    }
+  }, [deviceForm.category]);
+
   const handleLogout = () => {
     logout()
     router.push("/")
@@ -131,18 +148,22 @@ export default function AdminDashboard() {
       const { error: insertError } = await supabase.from('agents').insert([
         {
           user_id: application.user_id,
-          name: application.name,
+          name: application.name, // RESTORED, now exists in schema
           email: application.email,
           phone: application.phone,
           shop_name: application.shop_name,
-          shop_address: application.shop_address,
+          shop_address_street: application.shop_address, // match schema
+          shop_address_city: application.city_name || '', // if available, else ''
+          shop_address_state: application.state || '', // if available, else ''
+          shop_address_pincode: application.pincode,
+          shop_address_landmark: application.landmark || null, // if available
           city_id: application.city_id,
-          pincode: application.pincode,
           experience: application.experience,
           specializations: application.specializations,
           id_proof: application.id_proof,
-          shop_images: application.shop_images,
-          is_active: true,
+          // shop_images: application.shop_images, // not in agents schema
+          status: 'approved',
+          is_online: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
@@ -288,16 +309,65 @@ export default function AdminDashboard() {
     return matchesSearch && matchesStatus && matchesCity
   })
 
-  const handleAddDevice = () => {
-    if (!deviceForm.category || !deviceForm.brand || !deviceForm.model) {
-      toast({ title: "Error", description: "Please fill all fields", variant: "destructive" })
-      return
+  const handleAddDevice = async () => {
+    setBrandError("");
+    let modelId = deviceForm.model;
+    if (deviceForm.model === "__new__") {
+      // Check if model exists for this category
+      const { data: existing, error: existErr } = await supabase.from('models').select('*').eq('name', newBrand.trim()).eq('category_id', deviceForm.category);
+      if (existErr) {
+        toast({ title: "Error", description: existErr.message, variant: "destructive" });
+        return;
+      }
+      if (existing && existing.length > 0) {
+        modelId = existing[0].id;
+      } else {
+        // Insert new model
+        const { data: inserted, error: insertErr } = await supabase.from('models').insert([{ name: newBrand.trim(), category_id: deviceForm.category }]).select().single();
+        if (insertErr) {
+          toast({ title: "Error", description: insertErr.message, variant: "destructive" });
+          return;
+        }
+        modelId = inserted.id;
+      }
     }
-    // Here you would call your API to add the device
-    toast({ title: "Device Added", description: `${deviceForm.brand} ${deviceForm.model} added to ${deviceForm.category}` })
-    setShowAddDevice(false)
-    setDeviceForm({ category: "", brand: "", model: "" })
-  }
+    if (!deviceForm.category || !modelId || !deviceForm.brand) {
+      toast({ title: "Error", description: "Please fill all fields", variant: "destructive" });
+      return;
+    }
+    setAddingDevice(true);
+    try {
+      const res = await fetch("/api/devices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category_id: deviceForm.category,
+          model_name: deviceForm.model === "__new__" ? newBrand.trim() : (models.find(m => m.id === deviceForm.model)?.name || ""),
+          brand: deviceForm.brand.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setBrandError("Device with this category, brand, and model already exists.");
+          toast({ title: "Already Exists", description: "This device already exists.", variant: "destructive" });
+        } else {
+          toast({ title: "Error", description: data.message || "Failed to add device", variant: "destructive" });
+        }
+        setAddingDevice(false);
+        return;
+      }
+      toast({ title: "Device Added", description: `${deviceForm.brand} added to selected model and category` });
+      setShowAddDevice(false);
+      setDeviceForm({ category: "", brand: "", model: "" });
+      setNewBrand("");
+      setAddingDevice(false);
+      setBrandError("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add device", variant: "destructive" });
+      setAddingDevice(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -328,30 +398,48 @@ export default function AdminDashboard() {
                 <DialogTitle>Add Device</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <Select value={deviceForm.category} onValueChange={val => setDeviceForm(f => ({ ...f, category: val, brand: "" }))}>
+                <Select value={deviceForm.category} onValueChange={val => setDeviceForm(f => ({ ...f, category: val, model: "" }))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
+                    <SelectValue placeholder={categoryLoading ? "Loading..." : "Select category"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {deviceCategories.map(cat => (
+                    {categories.map(cat => (
                       <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={deviceForm.brand} onValueChange={val => setDeviceForm(f => ({ ...f, brand: val }))} disabled={!deviceForm.category}>
+                <Select
+                  value={deviceForm.model === "__new__" ? "__new__" : deviceForm.model}
+                  onValueChange={val => {
+                    setBrandError("");
+                    setDeviceForm(f => ({ ...f, model: val }));
+                    if (val !== "__new__") setNewBrand("");
+                  }}
+                  disabled={!deviceForm.category || modelLoading}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select brand" />
+                    <SelectValue placeholder={modelLoading ? "Loading..." : "Select model"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {brands[deviceForm.category as keyof typeof brands]?.map(brand => (
-                      <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+                    {models.map(model => (
+                      <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
                     ))}
+                    <SelectItem value="__new__">Add new model...</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input placeholder="Model name" value={deviceForm.model} onChange={e => setDeviceForm(f => ({ ...f, model: e.target.value }))} />
+                {deviceForm.model === "__new__" && (
+                  <Input
+                    placeholder="Enter new model name"
+                    value={newBrand}
+                    onChange={e => setNewBrand(e.target.value)}
+                    className={brandError ? "border-red-500" : ""}
+                  />
+                )}
+                <Input placeholder="Brand name" value={deviceForm.brand} onChange={e => setDeviceForm(f => ({ ...f, brand: e.target.value }))} />
+                {brandError && <div className="text-red-500 text-sm">{brandError}</div>}
               </div>
               <DialogFooter>
-                <Button onClick={handleAddDevice}>Add Device</Button>
+                <Button onClick={handleAddDevice} disabled={addingDevice}>{addingDevice ? "Adding..." : "Add Device"}</Button>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
@@ -674,7 +762,7 @@ export default function AdminDashboard() {
                               <SelectContent>
                                 {agents.map((agent: any) => (
                                   <SelectItem key={agent.id} value={agent.id}>
-                                    {agent.name} - {agent.city}
+                                    {agent.name} - {agent.shop_name}
                                   </SelectItem>
                                 ))}
                               </SelectContent>

@@ -112,10 +112,19 @@ router.get("/devices", async (req, res) => {
 router.post("/devices", async (req, res) => {
   const token = req.headers["authorization"]?.split(" ")[1]
   if (!token || !(await isAdmin(token))) return res.status(403).json({ message: "Access denied" })
-  const { category, brand, model, image, commonFaults } = req.body
-  const { data: device, error } = await supabase.from("devices").insert([{ category, brand, model, image, commonFaults }]).select().single()
-  if (error) return res.status(500).json({ message: error.message })
-  res.status(201).json({ message: "Device added successfully", device })
+  const { category_id, brand, model_id, image, commonFaults } = req.body
+  try {
+    const { data: device, error } = await supabase.from("devices").insert([{ category_id, brand, model_id, image, commonFaults }]).select().single()
+    if (error) {
+      if (error.message && error.message.toLowerCase().includes("duplicate")) {
+        return res.status(409).json({ message: "Device with this category, brand, and model already exists." })
+      }
+      return res.status(500).json({ message: error.message })
+    }
+    res.status(201).json({ message: "Device added successfully", device })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
 })
 
 router.patch("/devices/:id", async (req, res) => {

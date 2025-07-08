@@ -23,36 +23,8 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { supabase } from "@/lib/api"
 
-const deviceCategories = [
-  { id: "mobile", name: "Mobile Phones", icon: "📱" },
-  { id: "tablet", name: "Tablets", icon: "📱" },
-  { id: "laptop", name: "Laptops", icon: "💻" },
-  { id: "smartwatch", name: "Smartwatches", icon: "⌚" },
-]
-
-const brands = {
-  mobile: ["Apple", "Samsung", "OnePlus", "Xiaomi", "Google", "Oppo", "Vivo"],
-  tablet: ["Apple", "Samsung", "Lenovo", "Huawei"],
-  laptop: ["Apple", "Dell", "HP", "Lenovo", "Asus"],
-  smartwatch: ["Apple", "Samsung", "Fitbit", "Garmin"],
-}
-
-const models = {
-  Apple: [
-    "iPhone 15 Pro",
-    "iPhone 15",
-    "iPhone 14 Pro",
-    "iPhone 14",
-    "iPhone 13",
-    "iPad Pro",
-    "iPad Air",
-    "MacBook Pro",
-    "MacBook Air",
-  ],
-  Samsung: ["Galaxy S24", "Galaxy S23", "Galaxy Note 20", "Galaxy Tab S9", "Galaxy Watch 6"],
-  OnePlus: ["OnePlus 12", "OnePlus 11", "OnePlus 10 Pro"],
-  Xiaomi: ["Mi 14", "Mi 13", "Redmi Note 13"],
-}
+type Category = { id: string; name: string };
+type Model = { id: string; name: string; category_id: string };
 
 const commonFaults = [
   "Screen Cracked/Broken",
@@ -93,6 +65,7 @@ export default function BookRepairPage() {
     duration: "",
     promoCode: "",
     paymentMethod: "",
+    newModel: "", // Added for new model input
   })
 
   const steps = [
@@ -107,6 +80,10 @@ export default function BookRepairPage() {
   const [citiesLoading, setCitiesLoading] = useState(true)
   const [agentsLoading, setAgentsLoading] = useState(true)
   const [userCity, setUserCity] = useState<string>("")
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState(false);
+  const [modelLoading, setModelLoading] = useState(false);
 
   useEffect(() => {
     // Fetch cities
@@ -124,6 +101,26 @@ export default function BookRepairPage() {
       setUserCity(user?.user_metadata?.city || "")
     })
   }, [])
+
+  useEffect(() => {
+    setCategoryLoading(true);
+    supabase.from('categories').select('*').then(({ data }) => {
+      setCategories(data || []);
+      setCategoryLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (formData.category) {
+      setModelLoading(true);
+      supabase.from('models').select('*').eq('category_id', formData.category).then(({ data }) => {
+        setModels(data || []);
+        setModelLoading(false);
+      });
+    } else {
+      setModels([]);
+    }
+  }, [formData.category]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -311,22 +308,16 @@ export default function BookRepairPage() {
                 {/* Device Category */}
                 <div className="space-y-3">
                   <Label className="text-base font-medium">Device Category</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {deviceCategories.map((category) => (
-                      <div
-                        key={category.id}
-                        className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                          formData.category === category.id
-                            ? "border-primary bg-primary/5"
-                            : "border-muted hover:border-primary/50"
-                        }`}
-                        onClick={() => setFormData({ ...formData, category: category.id, brand: "", model: "" })}
-                      >
-                        <div className="text-2xl mb-2">{category.icon}</div>
-                        <p className="text-sm font-medium">{category.name}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <Select value={formData.category} onValueChange={val => setFormData(f => ({ ...f, category: val, model: "" }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={categoryLoading ? "Loading..." : "Select category"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Brand Selection */}
@@ -341,36 +332,42 @@ export default function BookRepairPage() {
                         <SelectValue placeholder="Select brand" />
                       </SelectTrigger>
                       <SelectContent>
-                        {brands[formData.category as keyof typeof brands]?.map((brand) => (
-                          <SelectItem key={brand} value={brand}>
-                            {brand}
-                          </SelectItem>
-                        ))}
+                        {/* This part needs to be dynamic based on the selected category */}
+                        {/* For now, it's a placeholder, as models are fetched dynamically */}
+                        {/* When a category is selected, fetch models for that category */}
+                        {/* For now, it will be empty until models are fetched */}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
 
                 {/* Model Selection */}
-                {formData.brand && (
+                {formData.category && (
                   <div className="space-y-3">
                     <Label className="text-base font-medium">Model</Label>
                     <Select
-                      value={formData.model}
-                      onValueChange={(value) => setFormData({ ...formData, model: value })}
+                      value={formData.model === "__new__" ? "__new__" : formData.model}
+                      onValueChange={val => setFormData(f => ({ ...f, model: val }))}
+                      disabled={!formData.category || modelLoading}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select model" />
+                        <SelectValue placeholder={modelLoading ? "Loading..." : "Select model"} />
                       </SelectTrigger>
                       <SelectContent>
-                        {models[formData.brand as keyof typeof models]?.map((model) => (
-                          <SelectItem key={model} value={model}>
-                            {model}
-                          </SelectItem>
+                        {models.map(model => (
+                          <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
                         ))}
+                        <SelectItem value="__new__">Add new model...</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                )}
+                {formData.model === "__new__" && (
+                  <Input
+                    placeholder="Enter new model name"
+                    value={formData.newModel || ""}
+                    onChange={e => setFormData(f => ({ ...f, newModel: e.target.value }))}
+                  />
                 )}
 
                 {/* Fault Selection */}

@@ -12,10 +12,9 @@ router.get("/", auth, async (req, res) => {
 
 // Get all categories
 router.get("/categories", auth, async (req, res) => {
-  const { data, error } = await supabase.from("devices").select("category").neq("is_active", false)
+  const { data, error } = await supabase.from("categories").select("*")
   if (error) return res.status(500).json({ message: error.message })
-  const categories = [...new Set(data.map(d => d.category))]
-  res.json({ categories })
+  res.json({ categories: data })
 })
 
 // Get brands by category
@@ -27,12 +26,12 @@ router.get("/brands/:category", auth, async (req, res) => {
   res.json({ brands })
 })
 
-// Get models by category and brand
-router.get("/models/:category/:brand", auth, async (req, res) => {
-  const { category, brand } = req.params
-  const { data, error } = await supabase.from("devices").select("model, common_faults, image").eq("category", category).eq("brand", brand).neq("is_active", false)
+// Get models by category
+router.get("/models/:category_id", auth, async (req, res) => {
+  const { category_id } = req.params
+  const { data, error } = await supabase.from("models").select("*").eq("category_id", category_id)
   if (error) return res.status(500).json({ message: error.message })
-  res.json({ devices: data })
+  res.json({ models: data })
 })
 
 // Get device by ID
