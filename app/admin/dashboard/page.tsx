@@ -72,6 +72,7 @@ export default function AdminDashboard() {
   // Add state for approval/rejection and tempPassword
   const [actionStates, setActionStates] = useState<Record<string, { approved: boolean, rejected: boolean, tempPassword?: string }>>({});
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -543,8 +544,9 @@ export default function AdminDashboard() {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="agent-requests" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="agent-requests">Agent Requests ({loading ? "..." : stats?.pendingAgents ?? 0})</TabsTrigger>
+            <TabsTrigger value="agents">Agents</TabsTrigger>
             <TabsTrigger value="bookings">All Bookings</TabsTrigger>
             <TabsTrigger value="cities">City Management</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
@@ -677,15 +679,64 @@ export default function AdminDashboard() {
                               )}
                             </div>
                           )}
-                          <Button size="sm" variant="outline" className="w-full">
+                          <Button size="sm" variant="outline" className="w-full" onClick={() => setExpandedRequestId(expandedRequestId === request.id ? null : request.id)}>
                             <Eye className="h-3 w-3 mr-1" />
-                            View Details
+                            {expandedRequestId === request.id ? 'Hide Details' : 'View Details'}
                           </Button>
                         </div>
                       </div>
+                      <motion.div
+                        initial={false}
+                        animate={expandedRequestId === request.id ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        {expandedRequestId === request.id && (
+                          <div className="mt-4 p-4 border-t bg-muted/50 rounded-b-lg">
+                            <h4 className="font-semibold mb-2">ID Proof</h4>
+                            {request.id_proof ? (
+                              <img
+                                src={request.id_proof}
+                                alt="ID Proof"
+                                className="w-full max-w-xs rounded shadow mb-4 border"
+                              />
+                            ) : (
+                              <p className="text-sm text-muted-foreground mb-4">No ID proof uploaded.</p>
+                            )}
+                            <h4 className="font-semibold mb-2">Shop Images</h4>
+                            {request.shop_images && request.shop_images.length > 0 ? (
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {request.shop_images.map((img: string, idx: number) => (
+                                  <img
+                                    key={idx}
+                                    src={img}
+                                    alt={`Shop Image ${idx + 1}`}
+                                    className="w-full h-32 object-cover rounded shadow border"
+                                  />
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">No shop images uploaded.</p>
+                            )}
+                          </div>
+                        )}
+                      </motion.div>
                     </motion.div>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Agents Tab */}
+          <TabsContent value="agents" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Agents</CardTitle>
+                <CardDescription>List of all approved agents</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AgentsTable agents={agents} cities={cities} getCityName={getCityName} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -958,4 +1009,95 @@ export default function AdminDashboard() {
       )}
     </DashboardLayout>
   )
+}
+
+function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: any[], getCityName: (id: string) => string }) {
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const approvedAgents = agents.filter((a) => a);
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead>
+          <tr className="bg-muted">
+            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Name</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Shop Name</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Phone</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">Email</th>
+            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground uppercase">City</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Online</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Rating</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Completed Jobs</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Earnings (₹)</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+          {approvedAgents.map((agent) => (
+            <>
+              <tr key={agent.id} className="hover:bg-muted/50 transition-colors">
+                <td className="px-4 py-2 whitespace-nowrap">{agent.name}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{agent.shop_name}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{agent.phone}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{agent.email}</td>
+                <td className="px-4 py-2 whitespace-nowrap">{getCityName(agent.city_id)}</td>
+                <td className="px-4 py-2 text-center">{agent.is_online ? '✅' : '❌'}</td>
+                <td className="px-4 py-2 text-center">{agent.rating_average?.toFixed(1) ?? '0.0'} <span className="text-xs text-muted-foreground">({agent.rating_count ?? 0})</span></td>
+                <td className="px-4 py-2 text-center">{agent.completed_jobs ?? 0}</td>
+                <td className="px-4 py-2 text-center">{agent.earnings_total?.toLocaleString() ?? '0'}</td>
+                <td className="px-4 py-2 text-center">
+                  <Button size="sm" variant="outline" onClick={() => setExpandedAgentId(expandedAgentId === agent.id ? null : agent.id)}>
+                    <Eye className="h-3 w-3 mr-1" />
+                    {expandedAgentId === agent.id ? 'Hide Details' : 'View Details'}
+                  </Button>
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={10} className="p-0 border-none">
+                  <motion.div
+                    initial={false}
+                    animate={expandedAgentId === agent.id ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    {expandedAgentId === agent.id && (
+                      <div className="p-4 bg-muted/50 rounded-b-lg flex flex-col md:flex-row gap-6">
+                        <div className="flex-shrink-0">
+                          <h4 className="font-semibold mb-2">ID Proof</h4>
+                          <img src={agent.id_proof} alt="ID Proof" className="w-40 h-40 object-cover rounded shadow border mb-4" />
+                        </div>
+                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <h4 className="font-semibold mb-1">Specializations</h4>
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {(agent.specializations || []).length > 0 ? agent.specializations.map((spec: string, idx: number) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">{spec}</Badge>
+                              )) : <span className="text-muted-foreground text-xs">None</span>}
+                            </div>
+                            <h4 className="font-semibold mb-1">Experience</h4>
+                            <p className="text-sm text-muted-foreground mb-2">{agent.experience || 'N/A'}</p>
+                            <h4 className="font-semibold mb-1">Last Seen</h4>
+                            <p className="text-sm text-muted-foreground mb-2">{agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'N/A'}</p>
+                          </div>
+                          <div>
+                            <h4 className="font-semibold mb-1">Earnings Paid</h4>
+                            <p className="text-sm text-muted-foreground mb-2">₹{agent.earnings_paid?.toLocaleString() ?? '0'}</p>
+                            <h4 className="font-semibold mb-1">Earnings Pending</h4>
+                            <p className="text-sm text-muted-foreground mb-2">₹{agent.earnings_pending?.toLocaleString() ?? '0'}</p>
+                            <h4 className="font-semibold mb-1">Created At</h4>
+                            <p className="text-sm text-muted-foreground mb-2">{agent.created_at ? new Date(agent.created_at).toLocaleString() : 'N/A'}</p>
+                            <h4 className="font-semibold mb-1">Updated At</h4>
+                            <p className="text-sm text-muted-foreground mb-2">{agent.updated_at ? new Date(agent.updated_at).toLocaleString() : 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                </td>
+              </tr>
+            </>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
