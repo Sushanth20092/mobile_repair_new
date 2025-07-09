@@ -20,6 +20,7 @@ begin
     user_phone text := coalesce(new.raw_user_meta_data->>'phone', '');
     user_role text := coalesce(new.raw_user_meta_data->>'role', 'user');
     user_city_id uuid := null;
+    user_city_id_text text;
     existing_email text;
   begin
     -- Check if email already exists in profiles table
@@ -31,10 +32,31 @@ begin
     end if;
     
     -- Try to parse city_id, but don't fail if it's invalid
+    user_city_id_text := new.raw_user_meta_data->>'city_id';
+    raise notice 'Raw city_id value for user %: %', new.id, user_city_id_text;
     begin
-      user_city_id := (new.raw_user_meta_data->>'city_id')::uuid;
+      if user_city_id_text ~* '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then
+        -- Try to cast to UUID and check if it exists in cities
+        declare
+          city_exists boolean;
+        begin
+          select exists(select 1 from public.cities where id = user_city_id_text::uuid) into city_exists;
+          if city_exists then
+            user_city_id := user_city_id_text::uuid;
+          else
+            raise notice 'city_id for user % is not found in cities table: %', new.id, user_city_id_text;
+            user_city_id := null;
+          end if;
+        exception when others then
+          raise notice 'city_id for user % could not be cast to UUID: %', new.id, user_city_id_text;
+          user_city_id := null;
+        end;
+      else
+        raise notice 'city_id for user % is not a valid UUID: %', new.id, user_city_id_text;
+        user_city_id := null;
+      end if;
     exception when others then
-      raise log 'Invalid city_id for user %: %', new.id, new.raw_user_meta_data->>'city_id';
+      raise notice 'Unexpected error handling city_id for user %: %', new.id, user_city_id_text;
       user_city_id := null;
     end;
     

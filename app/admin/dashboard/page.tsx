@@ -69,6 +69,10 @@ export default function AdminDashboard() {
   const [addingCity, setAddingCity] = useState(false);
   const addCityDialogRef = useRef(null);
 
+  // Add state for approval/rejection and tempPassword
+  const [actionStates, setActionStates] = useState<Record<string, { approved: boolean, rejected: boolean, tempPassword?: string }>>({});
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -146,42 +150,16 @@ export default function AdminDashboard() {
 
   const handleApproveAgent = async (requestId: string) => {
     try {
-      // Find the application
       const application = agentRequests.find((req) => req.id === requestId)
       if (!application) return
-      // Insert into agents table
-      const { error: insertError } = await supabase.from('agents').insert([
-        {
-          user_id: application.user_id,
-          name: application.name, // RESTORED, now exists in schema
-          email: application.email,
-          phone: application.phone,
-          shop_name: application.shop_name,
-          shop_address_street: application.shop_address, // match schema
-          shop_address_city: application.city_name || '', // if available, else ''
-          shop_address_state: application.state || '', // if available, else ''
-          shop_address_pincode: application.pincode,
-          shop_address_landmark: application.landmark || null, // if available
-          city_id: application.city_id,
-          experience: application.experience,
-          specializations: application.specializations,
-          id_proof: application.id_proof,
-          // shop_images: application.shop_images, // not in agents schema
-          status: 'approved',
-          is_online: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
-      ])
-      if (insertError) throw insertError
-      // Update application status
-      const { error: updateError } = await supabase.from('agent_applications').update({
-        status: 'approved',
-        reviewed_by: user?.id || null,
-        reviewed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', requestId)
-      if (updateError) throw updateError
+      const res = await fetch('/api/agents/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ application: { ...application, admin_id: user?.id } }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || data.error || 'Failed to approve agent')
+      setActionStates((prev) => ({ ...prev, [requestId]: { approved: true, rejected: false, tempPassword: data.tempPassword } }))
       toast({
         title: "Agent Approved",
         description: "Agent request has been approved successfully",
@@ -194,16 +172,20 @@ export default function AdminDashboard() {
       })
     }
   }
-
   const handleRejectAgent = async (requestId: string) => {
+    setRejectingId(requestId);
+  }
+  const confirmRejectAgent = async (requestId: string) => {
     try {
-      const { error } = await supabase.from('agent_applications').update({
-        status: 'rejected',
-        reviewed_by: user?.id || null,
-        reviewed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq('id', requestId)
-      if (error) throw error
+      const res = await fetch('/api/agents/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: requestId, adminId: user?.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || data.error || 'Failed to reject agent')
+      setActionStates((prev) => ({ ...prev, [requestId]: { approved: false, rejected: true } }))
+      setRejectingId(null);
       toast({
         title: "Agent Rejected",
         description: "Agent request has been rejected",
@@ -215,6 +197,7 @@ export default function AdminDashboard() {
         description: error.message || "Failed to reject agent application.",
         variant: "destructive",
       })
+      setRejectingId(null);
     }
   }
 
@@ -642,12 +625,12 @@ export default function AdminDashboard() {
                             </p>
                             <p className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              Applied: {new Date(request.appliedDate).toLocaleDateString()}
+                              Applied: {new Date(request.created_at).toLocaleDateString()}
                             </p>
                           </div>
                           <div className="mb-3">
                             <p className="text-sm font-medium mb-1">Address:</p>
-                            <p className="text-sm text-muted-foreground">{request.shopAddress}</p>
+                            <p className="text-sm text-muted-foreground">{request.shop_address}</p>
                           </div>
                           <div className="mb-3">
                             <p className="text-sm font-medium mb-1">Specializations:</p>
@@ -672,19 +655,26 @@ export default function AdminDashboard() {
                           </div>
                           {request.status === "pending" && (
                             <div className="flex flex-col gap-2">
-                              <Button size="sm" onClick={() => handleApproveAgent(request.id)} className="w-full">
+                              <Button size="sm" onClick={() => handleApproveAgent(request.id)} className="w-full" disabled={actionStates[request.id]?.approved || actionStates[request.id]?.rejected}>
                                 <UserCheck className="h-3 w-3 mr-1" />
-                                Approve
+                                {actionStates[request.id]?.approved ? "Approved" : "Approve"}
                               </Button>
                               <Button
                                 size="sm"
                                 variant="outline"
                                 onClick={() => handleRejectAgent(request.id)}
                                 className="w-full"
+                                disabled={actionStates[request.id]?.approved || actionStates[request.id]?.rejected}
                               >
                                 <UserX className="h-3 w-3 mr-1" />
-                                Reject
+                                {actionStates[request.id]?.rejected ? "Rejected" : "Reject"}
                               </Button>
+                              {actionStates[request.id]?.approved && actionStates[request.id]?.tempPassword && (
+                                <div className="mt-2 p-2 bg-muted rounded text-xs">
+                                  <strong>Temporary Password:</strong> <span className="font-mono select-all">{actionStates[request.id].tempPassword}</span>
+                                  <div className="text-muted-foreground text-xs mt-1">Copy and send this password to the agent.</div>
+                                </div>
+                              )}
                             </div>
                           )}
                           <Button size="sm" variant="outline" className="w-full">
@@ -953,6 +943,19 @@ export default function AdminDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+      {/* Reject confirmation modal */}
+      {rejectingId && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-sm w-full shadow-lg">
+            <h2 className="text-lg font-semibold mb-2">Reject Application</h2>
+            <p className="mb-4">Do you really want to reject the application?</p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setRejectingId(null)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => confirmRejectAgent(rejectingId)}>Reject</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   )
 }
