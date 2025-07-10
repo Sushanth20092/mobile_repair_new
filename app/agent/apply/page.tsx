@@ -16,10 +16,12 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/api"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function AgentApplicationPage() {
   const router = useRouter()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
@@ -38,7 +40,7 @@ export default function AgentApplicationPage() {
   })
   const [cities, setCities] = useState<{ id: string, name: string }[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
-  const [applications, setApplications] = useState([]);
+  const [applications, setApplications] = useState<any[]>([]);
 
   const specializations = [
     "Mobile Phone Repair",
@@ -66,6 +68,17 @@ export default function AgentApplicationPage() {
   useEffect(() => {
     supabase.from('agent_applications').select('*').then(({ data }) => setApplications(data || []));
   }, []);
+
+  useEffect(() => {
+    // Redirect if not authenticated
+    if (user === null) {
+      toast({
+        title: "Please log in to apply as an agent.",
+        variant: "destructive",
+      })
+      router.replace("/auth/login")
+    }
+  }, [user, router, toast])
 
   const handleSpecializationToggle = (specialization: string) => {
     const newSpecializations = formData.specializations.includes(specialization)
@@ -110,13 +123,18 @@ export default function AgentApplicationPage() {
     setFormData({ ...formData, shopImages: [...formData.shopImages, ...uploadedUrls] })
   }
 
+  // Check for duplicate pending application for this user
+  const hasPendingApplication = applications.some(
+    (app: any) => app.user_id === user?.id && app.status === "pending"
+  )
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsLoading(true)
     try {
       const { data, error } = await supabase.from('agent_applications').insert([
         {
-          // user_id can be set if you have auth, otherwise leave null
+          user_id: user?.id,
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
@@ -166,235 +184,241 @@ export default function AgentApplicationPage() {
             </CardHeader>
 
             <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Personal Information */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Personal Information</h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name *</Label>
-                      <Input
-                        id="name"
-                        placeholder="Enter your full name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        required
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone Number *</Label>
-                      <Input
-                        id="phone"
-                        placeholder="Enter phone number"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email Address *</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter your email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      required
-                    />
-                  </div>
+              {hasPendingApplication ? (
+                <div className="text-center text-yellow-600 font-semibold py-8">
+                  You already have a pending agent application. Please wait for it to be reviewed.
                 </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Personal Information */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Personal Information</h3>
 
-                {/* Shop Information */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Shop Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Full Name *</Label>
+                        <Input
+                          id="name"
+                          placeholder="Enter your full name"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          required
+                        />
+                      </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="shopName">Shop Name *</Label>
-                    <Input
-                      id="shopName"
-                      placeholder="Enter your shop name"
-                      value={formData.shopName}
-                      onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
-                      required
-                    />
-                  </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone Number *</Label>
+                        <Input
+                          id="phone"
+                          placeholder="Enter phone number"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="shopAddress">Shop Address *</Label>
-                    <Textarea
-                      id="shopAddress"
-                      placeholder="Enter complete shop address"
-                      value={formData.shopAddress}
-                      onChange={(e) => setFormData({ ...formData, shopAddress: e.target.value })}
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="city">City *</Label>
-                      <Select
-                        value={formData.city_id}
-                        onValueChange={value => setFormData({ ...formData, city_id: value })}
+                      <Label htmlFor="email">Email Address *</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="Enter your email"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Shop Information */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Shop Information</h3>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="shopName">Shop Name *</Label>
+                      <Input
+                        id="shopName"
+                        placeholder="Enter your shop name"
+                        value={formData.shopName}
+                        onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="shopAddress">Shop Address *</Label>
+                      <Textarea
+                        id="shopAddress"
+                        placeholder="Enter complete shop address"
+                        value={formData.shopAddress}
+                        onChange={(e) => setFormData({ ...formData, shopAddress: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="city">City *</Label>
+                        <Select
+                          value={formData.city_id}
+                          onValueChange={value => setFormData({ ...formData, city_id: value })}
+                          required
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={cities.length === 0 ? "Loading cities..." : "Select city"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {cities.map(city => (
+                              <SelectItem key={city.id} value={city.id}>
+                                {city.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="pincode">Pincode *</Label>
+                        <Input
+                          id="pincode"
+                          placeholder="Enter pincode"
+                          value={formData.pincode}
+                          onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Experience & Specializations */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Experience & Specializations</h3>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="experience">Years of Experience</Label>
+                      <Select
+                        value={formData.experience}
+                        onValueChange={(value) => setFormData({ ...formData, experience: value })}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder={cities.length === 0 ? "Loading cities..." : "Select city"} />
+                          <SelectValue placeholder="Select experience" />
                         </SelectTrigger>
                         <SelectContent>
-                          {cities.map(city => (
-                            <SelectItem key={city.id} value={city.id}>
-                              {city.name}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="0-1">0-1 years</SelectItem>
+                          <SelectItem value="1-3">1-3 years</SelectItem>
+                          <SelectItem value="3-5">3-5 years</SelectItem>
+                          <SelectItem value="5-10">5-10 years</SelectItem>
+                          <SelectItem value="10+">10+ years</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
+                    <div className="space-y-3">
+                      <Label>Specializations (Select all that apply)</Label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {specializations.map((specialization) => (
+                          <div key={specialization} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={specialization}
+                              checked={formData.specializations.includes(specialization)}
+                              onCheckedChange={() => handleSpecializationToggle(specialization)}
+                            />
+                            <Label htmlFor={specialization} className="text-sm">
+                              {specialization}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Document Upload */}
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-semibold">Documents</h3>
+
                     <div className="space-y-2">
-                      <Label htmlFor="pincode">Pincode *</Label>
-                      <Input
-                        id="pincode"
-                        placeholder="Enter pincode"
-                        value={formData.pincode}
-                        onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Experience & Specializations */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Experience & Specializations</h3>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="experience">Years of Experience</Label>
-                    <Select
-                      value={formData.experience}
-                      onValueChange={(value) => setFormData({ ...formData, experience: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select experience" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0-1">0-1 years</SelectItem>
-                        <SelectItem value="1-3">1-3 years</SelectItem>
-                        <SelectItem value="3-5">3-5 years</SelectItem>
-                        <SelectItem value="5-10">5-10 years</SelectItem>
-                        <SelectItem value="10+">10+ years</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label>Specializations (Select all that apply)</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {specializations.map((specialization) => (
-                        <div key={specialization} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={specialization}
-                            checked={formData.specializations.includes(specialization)}
-                            onCheckedChange={() => handleSpecializationToggle(specialization)}
-                          />
-                          <Label htmlFor={specialization} className="text-sm">
-                            {specialization}
-                          </Label>
+                      <Label htmlFor="idProof">ID Proof (Aadhar/PAN/Driving License)</Label>
+                      <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4">
+                        <div className="text-center">
+                          <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                          <div className="flex text-sm text-muted-foreground">
+                            <label
+                              htmlFor="id-upload"
+                              className="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary/80"
+                            >
+                              <span>Upload ID proof</span>
+                              <input
+                                id="id-upload"
+                                name="id-upload"
+                                type="file"
+                                className="sr-only"
+                                accept="image/*,.pdf"
+                                onChange={handleIdProofUpload}
+                              />
+                            </label>
+                          </div>
+                          {formData.idProof && <p className="text-sm text-green-600 mt-2">✓ {formData.idProof}</p>}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Document Upload */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold">Documents</h3>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="idProof">ID Proof (Aadhar/PAN/Driving License)</Label>
-                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4">
-                      <div className="text-center">
-                        <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                        <div className="flex text-sm text-muted-foreground">
-                          <label
-                            htmlFor="id-upload"
-                            className="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary/80"
-                          >
-                            <span>Upload ID proof</span>
-                            <input
-                              id="id-upload"
-                              name="id-upload"
-                              type="file"
-                              className="sr-only"
-                              accept="image/*,.pdf"
-                              onChange={handleIdProofUpload}
-                            />
-                          </label>
+                    <div className="space-y-2">
+                      <Label htmlFor="shopImages">Shop Images (Max 5)</Label>
+                      <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4">
+                        <div className="text-center">
+                          <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                          <div className="flex text-sm text-muted-foreground">
+                            <label
+                              htmlFor="shop-upload"
+                              className="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary/80"
+                            >
+                              <span>Upload shop images</span>
+                              <input
+                                id="shop-upload"
+                                name="shop-upload"
+                                type="file"
+                                className="sr-only"
+                                multiple
+                                accept="image/*"
+                                onChange={handleShopImagesUpload}
+                              />
+                            </label>
+                          </div>
+                          {formData.shopImages.length > 0 && (
+                            <p className="text-sm text-green-600 mt-2">
+                              ✓ {formData.shopImages.length} image(s) uploaded
+                            </p>
+                          )}
                         </div>
-                        {formData.idProof && <p className="text-sm text-green-600 mt-2">✓ {formData.idProof}</p>}
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="shopImages">Shop Images (Max 5)</Label>
-                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4">
-                      <div className="text-center">
-                        <Upload className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                        <div className="flex text-sm text-muted-foreground">
-                          <label
-                            htmlFor="shop-upload"
-                            className="relative cursor-pointer rounded-md font-medium text-primary hover:text-primary/80"
-                          >
-                            <span>Upload shop images</span>
-                            <input
-                              id="shop-upload"
-                              name="shop-upload"
-                              type="file"
-                              className="sr-only"
-                              multiple
-                              accept="image/*"
-                              onChange={handleShopImagesUpload}
-                            />
-                          </label>
-                        </div>
-                        {formData.shopImages.length > 0 && (
-                          <p className="text-sm text-green-600 mt-2">
-                            ✓ {formData.shopImages.length} image(s) uploaded
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                  {/* Terms & Conditions */}
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="terms"
+                      checked={formData.agreeToTerms}
+                      onCheckedChange={(checked) => setFormData({ ...formData, agreeToTerms: checked as boolean })}
+                    />
+                    <Label htmlFor="terms" className="text-sm">
+                      I agree to the{" "}
+                      <Link href="/terms" className="text-primary hover:underline">
+                        Terms and Conditions
+                      </Link>{" "}
+                      and{" "}
+                      <Link href="/privacy" className="text-primary hover:underline">
+                        Privacy Policy
+                      </Link>
+                    </Label>
                   </div>
-                </div>
 
-                {/* Terms & Conditions */}
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="terms"
-                    checked={formData.agreeToTerms}
-                    onCheckedChange={(checked) => setFormData({ ...formData, agreeToTerms: checked as boolean })}
-                  />
-                  <Label htmlFor="terms" className="text-sm">
-                    I agree to the{" "}
-                    <Link href="/terms" className="text-primary hover:underline">
-                      Terms and Conditions
-                    </Link>{" "}
-                    and{" "}
-                    <Link href="/privacy" className="text-primary hover:underline">
-                      Privacy Policy
-                    </Link>
-                  </Label>
-                </div>
-
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Submitting Application..." : "Submit Application"}
-                </Button>
-              </form>
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? "Submitting Application..." : "Submit Application"}
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         </motion.div>

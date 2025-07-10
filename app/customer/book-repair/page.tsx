@@ -57,7 +57,7 @@ export default function BookRepairPage() {
     selectedAgent: "",
     address: "",
     pincode: "",
-    city: "",
+    city_id: "",
     collectionDate: undefined as Date | undefined,
     collectionTime: "",
     deliveryDate: undefined as Date | undefined,
@@ -234,7 +234,7 @@ export default function BookRepairPage() {
             formData.deliveryTime
           )
         } else if (formData.serviceType === "postal") {
-          return formData.address && formData.pincode && formData.city
+          return formData.address && formData.pincode && formData.city_id
         }
         return false
       case 3:
@@ -586,8 +586,8 @@ export default function BookRepairPage() {
                         <div className="space-y-2">
                           <Label htmlFor="city">City</Label>
                           <Select
-                            value={formData.city}
-                            onValueChange={(value) => setFormData({ ...formData, city: value })}
+                            value={formData.city_id}
+                            onValueChange={(value) => setFormData({ ...formData, city_id: value })}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select city" />
@@ -599,7 +599,7 @@ export default function BookRepairPage() {
                                 <div>No cities available.</div>
                               ) : (
                                 cities.map((city) => (
-                                  <SelectItem key={city.id} value={city.name}>
+                                  <SelectItem key={city.id} value={city.id}>
                                     {city.name}
                                   </SelectItem>
                                 ))
@@ -723,8 +723,8 @@ export default function BookRepairPage() {
                         <div className="space-y-2">
                           <Label htmlFor="postalCity">City</Label>
                           <Select
-                            value={formData.city}
-                            onValueChange={(value) => setFormData({ ...formData, city: value })}
+                            value={formData.city_id}
+                            onValueChange={(value) => setFormData({ ...formData, city_id: value })}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select city" />
@@ -736,7 +736,7 @@ export default function BookRepairPage() {
                                 <div>No cities available.</div>
                               ) : (
                                 cities.map((city) => (
-                                  <SelectItem key={city.id} value={city.name}>
+                                  <SelectItem key={city.id} value={city.id}>
                                     {city.name}
                                   </SelectItem>
                                 ))

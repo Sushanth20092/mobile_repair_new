@@ -19,14 +19,13 @@ CREATE TABLE profiles (
   name text NOT NULL,
   email text UNIQUE NOT NULL,
   phone text UNIQUE NOT NULL,
-  password text NOT NULL,
   role text CHECK (role IN ('user', 'agent', 'admin')) DEFAULT 'user',
   is_verified boolean DEFAULT false,
   is_active boolean DEFAULT true,
   addresses jsonb DEFAULT '[]',
+  city_id uuid REFERENCES cities(id) NOT NULL,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
-  city_id uuid REFERENCES cities(id) NOT NULL
 );
 
 -- Agents table
@@ -35,10 +34,7 @@ CREATE TABLE agents (
   user_id uuid REFERENCES profiles(id) NOT NULL,
   shop_name text NOT NULL,
   shop_address_street text NOT NULL,
-  shop_address_city text NOT NULL,
-  shop_address_state text NOT NULL,
   shop_address_pincode text NOT NULL,
-  shop_address_landmark text,
   id_proof text NOT NULL,
   city_id uuid REFERENCES cities(id) NOT NULL,
   specializations text[] DEFAULT '{}',
@@ -80,10 +76,7 @@ CREATE TABLE bookings (
   images text[] DEFAULT '{}',
   service_type text CHECK (service_type IN ('local_dropoff', 'collection_delivery', 'postal')) NOT NULL,
   address_street text,
-  address_city text,
-  address_state text,
   address_pincode text,
-  address_landmark text,
   city_id uuid REFERENCES cities(id) NOT NULL,
   duration text CHECK (duration IN ('express', 'standard', 'economy')) NOT NULL,
   scheduled_date date,

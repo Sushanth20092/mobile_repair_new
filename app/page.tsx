@@ -82,7 +82,7 @@ export default function HomePage() {
 
   const handleRepairNow = () => {
     if (user) {
-      router.push("/customer/dashboard")
+      router.push("/")
     } else {
       router.push("/auth/login")
     }
@@ -320,15 +320,23 @@ export default function HomePage() {
             >
               Start Repair Process
             </Button>
-            <Link href="/agent/apply">
-              <Button
-                size="lg"
-                variant="outline"
-                className="px-8 bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground hover:text-primary"
-              >
-                Join as Agent
-              </Button>
-            </Link>
+            <Button
+              size="lg"
+              variant="outline"
+              className="px-8 bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground hover:text-primary"
+              onClick={() => {
+                if (!user) {
+                  toast({
+                    title: "Please register or log in before applying to become an agent.",
+                    variant: "destructive",
+                  })
+                } else {
+                  router.push("/agent/apply")
+                }
+              }}
+            >
+              Join as Agent
+            </Button>
           </div>
         </div>
       </section>

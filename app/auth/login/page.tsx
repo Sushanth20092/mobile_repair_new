@@ -16,6 +16,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
+import { createClient } from '@supabase/supabase-js'
 
 interface City {
   id: string
@@ -31,6 +32,11 @@ export default function LoginPage() {
   const { login, signup, forgotPassword, user } = useAuth()
   const { toast } = useToast()
   const [cities, setCities] = useState<City[]>([])
+
+  const supabaseClient = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
 
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -69,23 +75,6 @@ export default function LoginPage() {
     fetchCities()
   }, [])
 
-  // Handle redirection when user state changes (after login)
-  useEffect(() => {
-    if (user) {
-      // User is logged in, redirect based on role
-      switch (user.role) {
-        case "admin":
-          router.push("/admin/dashboard")
-          break
-        case "agent":
-          router.push("/agent/dashboard")
-          break
-        default:
-          router.push("/customer/dashboard")
-      }
-    }
-  }, [user, router])
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -94,14 +83,31 @@ export default function LoginPage() {
         toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" })
         return
       }
-      
       await login(loginData.email, loginData.password)
       toast({ title: "Success", description: "Logged in successfully" })
-      
-      // The auth context will automatically update the user state
-      // We can use the user state directly for redirection
-      // The onAuthStateChange listener in the context will handle this
-      
+
+      // Always fetch the user's profile from the profiles table using the auth user id
+      const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession()
+      if (sessionError || !sessionData?.session?.user) {
+        toast({ title: "Error", description: "Could not fetch user session", variant: "destructive" })
+        return
+      }
+      const userId = sessionData.session.user.id
+      const { data: profile, error: profileError } = await supabaseClient.from('profiles').select('*').eq('id', userId).single()
+      if (profileError || !profile) {
+        toast({ title: "Error", description: "Could not fetch user profile", variant: "destructive" })
+        return
+      }
+      console.log('User role:', profile.role)
+      if (profile.role === 'admin') {
+        router.push('/admin/dashboard')
+      } else if (profile.role === 'agent') {
+        router.push('/agent/dashboard')
+      } else if (profile.role === 'user') {
+        router.push('/customer/dashboard')
+      } else {
+        router.push('/')
+      }
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Invalid credentials", variant: "destructive" })
     } finally {

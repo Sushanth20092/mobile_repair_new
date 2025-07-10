@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import { supabase } from "@/lib/api"
+import { useRoleRedirect } from "@/hooks/use-role-redirect";
 
 type Category = { id: string; name: string };
 type Model = { id: string; name: string; category_id: string };
@@ -153,14 +154,16 @@ export default function AdminDashboard() {
     try {
       const application = agentRequests.find((req) => req.id === requestId)
       if (!application) return
+
+      // Do NOT create a new Auth user here!
       const res = await fetch('/api/agents/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ application: { ...application, admin_id: user?.id } }),
+        body: JSON.stringify({ application: { ...application }, admin_id: user?.id }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || data.error || 'Failed to approve agent')
-      setActionStates((prev) => ({ ...prev, [requestId]: { approved: true, rejected: false, tempPassword: data.tempPassword } }))
+      setActionStates((prev) => ({ ...prev, [requestId]: { approved: true, rejected: false } }))
       toast({
         title: "Agent Approved",
         description: "Agent request has been approved successfully",

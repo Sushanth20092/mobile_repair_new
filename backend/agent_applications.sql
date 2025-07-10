@@ -7,7 +7,7 @@ create table if not exists public.agent_applications (
   phone text not null,
   shop_name text not null,
   shop_address text not null,
-  city text not null,
+  city_id uuid references cities(id) not null,
   pincode text not null,
   experience text,
   specializations text[] not null default '{}',
