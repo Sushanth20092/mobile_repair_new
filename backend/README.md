@@ -122,9 +122,11 @@ STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
 ### Devices & Cities
 - `GET /api/devices/categories` - Get device categories
 - `GET /api/devices/brands/:category` - Get brands by category
-- `GET /api/devices/models/:category/:brand` - Get models
-- `GET /api/cities` - Get all cities
-- `GET /api/cities/validate-pincode/:pincode` - Validate pincode
+- `GET /api/devices/models/:category_id` - Get models by category
+- `GET /api/devices/search` - Search devices
+- `POST /api/admin/devices` - Add device (admin only)
+- `GET /api/cities/public` - Get public cities list
+- `POST /api/admin/cities` - Add city (admin only)
 
 ### File Upload
 - `POST /api/upload/images` - Upload multiple images
@@ -141,39 +143,27 @@ STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
 - `GET /api/reviews/booking/:bookingId` - Get booking review
 - `GET /api/reviews/agent/:agentId` - Get agent reviews
 
-## Database Models
+## Database Structure
 
-### User
-- Authentication and profile information
-- Role-based access (user, agent, admin)
-- Address management
-- OTP verification
+The application uses Supabase (PostgreSQL) with the following main tables:
 
-### Agent
-- Agent profile and shop information
-- Specializations and ratings
-- Status management (pending, approved, rejected)
+### Core Tables
+- **profiles** - User profiles with role-based access (user, agent, admin)
+- **agents** - Agent-specific information and status
+- **cities** - Available service cities with delivery charges
+- **categories** - Device categories (mobile, laptop, tablet, etc.)
+- **brands** - Device brands organized by category
+- **devices** - Device models with brand and category relationships
+- **bookings** - Repair service bookings
+- **reviews** - Customer reviews and ratings
+- **chats** - Real-time messaging between users and agents
 
-### Booking
-- Complete booking information
-- Service types (local dropoff, collection & delivery, postal)
-- Status tracking and payment information
-
-### Device
-- Device categories, brands, and models
-- Common faults and pricing
-
-### City
-- Service areas with pincodes
-- Delivery charges configuration
-
-### Review
-- Customer reviews and ratings
-- Agent responses
-
-### Chat
-- Real-time messaging between users and agents
-- File sharing support
+### Key Relationships
+- Users can have different roles (user, agent, admin)
+- Agents are approved users with additional shop information
+- Devices are organized by category → brand → model hierarchy
+- Bookings link users, agents, and devices
+- Reviews are tied to completed bookings
 
 ## Socket.io Events
 

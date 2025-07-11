@@ -5,37 +5,37 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 export async function POST(req: NextRequest) {
   try {
-    const { category_id, model_name, brand, image = null, common_faults = null } = await req.json();
-    if (!category_id || !model_name || !brand) {
+    const { category_id, brand_name, model, image = null, common_faults = null } = await req.json();
+    if (!category_id || !brand_name || !model) {
       return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
     }
-    // 1. Check if model exists
-    let { data: model, error: modelError } = await supabase
-      .from('models')
+    // 1. Check if brand exists
+    let { data: brand, error: brandError } = await supabase
+      .from('brands')
       .select('*')
-      .eq('name', model_name.trim())
+      .eq('name', brand_name.trim())
       .eq('category_id', category_id)
       .maybeSingle();
-    if (modelError) {
-      return NextResponse.json({ message: modelError.message }, { status: 500 });
+    if (brandError) {
+      return NextResponse.json({ message: brandError.message }, { status: 500 });
     }
-    let model_id = model?.id;
-    if (!model_id) {
-      // 2. Insert new model
-      const { data: newModel, error: insertModelError } = await supabase
-        .from('models')
-        .insert([{ name: model_name.trim(), category_id }])
+    let brand_id = brand?.id;
+    if (!brand_id) {
+      // 2. Insert new brand
+      const { data: newBrand, error: insertBrandError } = await supabase
+        .from('brands')
+        .insert([{ name: brand_name.trim(), category_id }])
         .select()
         .maybeSingle();
-      if (insertModelError || !newModel) {
-        return NextResponse.json({ message: insertModelError?.message || 'Failed to create model' }, { status: 500 });
+      if (insertBrandError || !newBrand) {
+        return NextResponse.json({ message: insertBrandError?.message || 'Failed to create brand' }, { status: 500 });
       }
-      model_id = newModel.id;
+      brand_id = newBrand.id;
     }
     // 3. Insert device
     const { data: device, error: deviceError } = await supabase
       .from('devices')
-      .insert([{ category_id, model_id, brand, image, common_faults }])
+      .insert([{ category_id, brand_id, model, image, common_faults }])
       .select()
       .maybeSingle();
     if (deviceError) {
@@ -45,6 +45,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: deviceError.message }, { status: 500 });
     }
     return NextResponse.json({ device }, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ message: err.message || 'Internal server error' }, { status: 500 });
+  }
+}
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const category_id = searchParams.get('category_id');
+    const brand_id = searchParams.get('brand_id');
+    if (!category_id || !brand_id) {
+      return NextResponse.json({ message: 'Missing category_id or brand_id' }, { status: 400 });
+    }
+    const { data, error } = await supabase
+      .from('devices')
+      .select('model')
+      .eq('category_id', category_id)
+      .eq('brand_id', brand_id)
+      .order('model', { ascending: true });
+    if (error) {
+      return NextResponse.json({ message: error.message }, { status: 500 });
+    }
+    // Get unique model names
+    const models = Array.from(new Set((data || []).map((d: any) => d.model)));
+    return NextResponse.json({ models }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json({ message: err.message || 'Internal server error' }, { status: 500 });
   }

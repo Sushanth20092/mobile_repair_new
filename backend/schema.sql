@@ -48,21 +48,46 @@ CREATE TABLE agents (
   earnings_pending float DEFAULT 0,
   earnings_paid float DEFAULT 0,
   created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  email text NOT NULL,
+  phone text NOT NULL,
+  experience text,
+  name text NOT NULL DEFAULT ''
+);
+
+-- Categories table
+CREATE TABLE categories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  description text,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
--- Devices table
+-- Brands table (renamed from models)
+CREATE TABLE brands (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  category_id uuid REFERENCES categories(id) NOT NULL,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  UNIQUE (name, category_id)
+);
+
+-- Devices table (updated structure)
 CREATE TABLE devices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  category text CHECK (category IN ('mobile', 'laptop', 'tablet', 'smartwatch', 'other')) NOT NULL,
-  brand text NOT NULL,
+  category_id uuid REFERENCES categories(id) NOT NULL,
+  brand_id uuid REFERENCES brands(id) NOT NULL,
   model text NOT NULL,
   image text,
   common_faults jsonb,
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
-  UNIQUE (category, brand, model)
+  UNIQUE (category_id, brand_id, model)
 );
 
 -- Bookings table

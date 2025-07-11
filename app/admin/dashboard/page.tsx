@@ -26,6 +26,9 @@ import {
   Mail,
   Building,
   LogOut,
+  Pencil,
+  Trash2,
+  Plus,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { DashboardLayout } from "@/components/dashboard-layout"
@@ -33,10 +36,10 @@ import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import { supabase } from "@/lib/api"
-import { useRoleRedirect } from "@/hooks/use-role-redirect";
+
 
 type Category = { id: string; name: string };
-type Model = { id: string; name: string; category_id: string };
+type Brand = { id: string; name: string; category_id: string };
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth()
@@ -61,9 +64,9 @@ export default function AdminDashboard() {
   const [cities, setCities] = useState<{ id: string, name: string }[]>([])
 
   const [categories, setCategories] = useState<Category[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
-  const [modelLoading, setModelLoading] = useState(false);
+  const [brandLoading, setBrandLoading] = useState(false);
 
   const [showAddCity, setShowAddCity] = useState(false);
   const [cityForm, setCityForm] = useState({ name: "", state: "", pincodes: "", delivery_charges_standard: "", delivery_charges_express: "" });
@@ -74,6 +77,19 @@ export default function AdminDashboard() {
   const [actionStates, setActionStates] = useState<Record<string, { approved: boolean, rejected: boolean, tempPassword?: string }>>({});
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
+
+  // Faults Management State
+  const [faultsTabDevices, setFaultsTabDevices] = useState<any[]>([]);
+  const [faultsTabFaults, setFaultsTabFaults] = useState<any[]>([]);
+  const [faultsTabLoading, setFaultsTabLoading] = useState(false);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
+  const [showAddFault, setShowAddFault] = useState(false);
+  const [addFaultForm, setAddFaultForm] = useState({ name: "", description: "", price: "" });
+  const [editingFault, setEditingFault] = useState<any>(null);
+  const [editFaultForm, setEditFaultForm] = useState({ name: "", description: "", price: "" });
+  const [faultsTabError, setFaultsTabError] = useState("");
+
+  const [selectedTab, setSelectedTab] = useState("agent-requests");
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -135,20 +151,33 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (deviceForm.category) {
-      setModelLoading(true);
-      supabase.from('models').select('*').eq('category_id', deviceForm.category).then(({ data }) => {
-        setModels(data || []);
-        setModelLoading(false);
+      setBrandLoading(true);
+      supabase.from('brands').select('*').eq('category_id', deviceForm.category).then(({ data }) => {
+        setBrands(data || []);
+        setBrandLoading(false);
       });
     } else {
-      setModels([]);
+      setBrands([]);
     }
   }, [deviceForm.category]);
 
-  const handleLogout = () => {
-    logout()
-    router.push("/")
-  }
+  useEffect(() => {
+    if (selectedTab !== "faults") return;
+    setFaultsTabLoading(true);
+    Promise.all([
+      supabase.from("devices").select("id, model, brand_id, category_id"),
+      supabase.from("faults").select("id, device_id, name, description, price, is_active")
+    ]).then(([devicesRes, faultsRes]) => {
+      setFaultsTabDevices(devicesRes.data || []);
+      setFaultsTabFaults(faultsRes.data || []);
+      setFaultsTabLoading(false);
+    });
+  }, [selectedTab]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   const handleApproveAgent = async (requestId: string) => {
     try {
@@ -303,27 +332,27 @@ export default function AdminDashboard() {
 
   const handleAddDevice = async () => {
     setBrandError("");
-    let modelName = deviceForm.model;
-    if (deviceForm.model === "__new__") {
-      // Check if model exists for this category
-      const { data: existing, error: existErr } = await supabase.from('models').select('*').eq('name', newBrand.trim()).eq('category_id', deviceForm.category);
+    let brandName = deviceForm.brand;
+    if (deviceForm.brand === "__new__") {
+      // Check if brand exists for this category
+      const { data: existing, error: existErr } = await supabase.from('brands').select('*').eq('name', newBrand.trim()).eq('category_id', deviceForm.category);
       if (existErr) {
         toast({ title: "Error", description: existErr.message, variant: "destructive" });
         return;
       }
       if (existing && existing.length > 0) {
-        modelName = existing[0].name;
+        brandName = existing[0].name;
       } else {
-        // Insert new model
-        const { data: inserted, error: insertErr } = await supabase.from('models').insert([{ name: newBrand.trim(), category_id: deviceForm.category }]).select().single();
+        // Insert new brand
+        const { data: inserted, error: insertErr } = await supabase.from('brands').insert([{ name: newBrand.trim(), category_id: deviceForm.category }]).select().single();
         if (insertErr) {
           toast({ title: "Error", description: insertErr.message, variant: "destructive" });
           return;
         }
-        modelName = inserted.name;
+        brandName = inserted.name;
       }
     }
-    if (!deviceForm.category || !modelName || !deviceForm.brand) {
+    if (!deviceForm.category || !brandName || !deviceForm.model) {
       toast({ title: "Error", description: "Please fill all fields", variant: "destructive" });
       return;
     }
@@ -334,8 +363,8 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           category_id: deviceForm.category,
-          model_name: modelName,
-          brand: deviceForm.brand.trim(),
+          brand_name: brandName,
+          model: deviceForm.model.trim(),
         }),
       });
       const data = await res.json();
@@ -349,15 +378,13 @@ export default function AdminDashboard() {
         setAddingDevice(false);
         return;
       }
-      toast({ title: "Device Added", description: `${deviceForm.brand} added to selected model and category` });
-      setShowAddDevice(false);
+      toast({ title: "Device Added", description: `${deviceForm.model} added to selected brand and category` });
       setDeviceForm({ category: "", brand: "", model: "" });
       setNewBrand("");
-      setAddingDevice(false);
       setBrandError("");
-      // Optionally: update device list here if you add a device list in the future
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to add device", variant: "destructive" });
+      setAddingDevice(false);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to add device", variant: "destructive" });
       setAddingDevice(false);
     }
   };
@@ -396,6 +423,76 @@ export default function AdminDashboard() {
     }
   };
 
+  // Add Fault
+  const handleAddFault = async () => {
+    setFaultsTabError("");
+    if (!selectedDeviceId || !addFaultForm.name || !addFaultForm.price) {
+      setFaultsTabError("Please fill all required fields.");
+      return;
+    }
+    const price = parseFloat(addFaultForm.price);
+    if (isNaN(price)) {
+      setFaultsTabError("Price must be a number.");
+      return;
+    }
+    const { error } = await supabase.from("faults").insert([
+      {
+        device_id: selectedDeviceId,
+        name: addFaultForm.name.trim(),
+        description: addFaultForm.description.trim(),
+        price,
+      }
+    ]);
+    if (error) {
+      setFaultsTabError(error.message);
+      return;
+    }
+    setAddFaultForm({ name: "", description: "", price: "" });
+    setShowAddFault(false);
+    // Refresh faults
+    const { data } = await supabase.from("faults").select("id, device_id, name, description, price, is_active");
+    setFaultsTabFaults(data || []);
+  };
+
+  // Edit Fault
+  const handleEditFault = async () => {
+    setFaultsTabError("");
+    if (!editingFault || !editFaultForm.name || !editFaultForm.price) {
+      setFaultsTabError("Please fill all required fields.");
+      return;
+    }
+    const price = parseFloat(editFaultForm.price);
+    if (isNaN(price)) {
+      setFaultsTabError("Price must be a number.");
+      return;
+    }
+    const { error } = await supabase.from("faults").update({
+      name: editFaultForm.name.trim(),
+      description: editFaultForm.description.trim(),
+      price,
+    }).eq("id", editingFault.id);
+    if (error) {
+      setFaultsTabError(error.message);
+      return;
+    }
+    setEditingFault(null);
+    // Refresh faults
+    const { data } = await supabase.from("faults").select("id, device_id, name, description, price, is_active");
+    setFaultsTabFaults(data || []);
+  };
+
+  // Soft Delete Fault
+  const handleDeleteFault = async (faultId: string) => {
+    const { error } = await supabase.from("faults").update({ is_active: false }).eq("id", faultId);
+    if (error) {
+      setFaultsTabError(error.message);
+      return;
+    }
+    // Refresh faults
+    const { data } = await supabase.from("faults").select("id, device_id, name, description, price, is_active");
+    setFaultsTabFaults(data || []);
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -425,7 +522,7 @@ export default function AdminDashboard() {
                 <DialogTitle>Add Device</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <Select value={deviceForm.category} onValueChange={val => setDeviceForm(f => ({ ...f, category: val, model: "" }))}>
+                <Select value={deviceForm.category} onValueChange={val => setDeviceForm(f => ({ ...f, category: val, brand: "", model: "" }))}>
                   <SelectTrigger>
                     <SelectValue placeholder={categoryLoading ? "Loading..." : "Select category"} />
                   </SelectTrigger>
@@ -436,25 +533,25 @@ export default function AdminDashboard() {
                   </SelectContent>
                 </Select>
                 <Select
-                  value={deviceForm.model === "__new__" ? "__new__" : deviceForm.model}
+                  value={deviceForm.brand === "__new__" ? "__new__" : deviceForm.brand}
                   onValueChange={val => {
                     setBrandError("");
-                    setDeviceForm(f => ({ ...f, model: val }));
+                    setDeviceForm(f => ({ ...f, brand: val }));
                     if (val !== "__new__") setNewBrand("");
                   }}
-                  disabled={!deviceForm.category || modelLoading}
+                  disabled={!deviceForm.category || brandLoading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={modelLoading ? "Loading..." : "Select brand"} />
+                    <SelectValue placeholder={brandLoading ? "Loading..." : "Select brand"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.map(model => (
-                      <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                    {brands.map(brand => (
+                      <SelectItem key={brand.id} value={brand.id}>{brand.name}</SelectItem>
                     ))}
                     <SelectItem value="__new__">Add new brand...</SelectItem>
                   </SelectContent>
                 </Select>
-                {deviceForm.model === "__new__" && (
+                {deviceForm.brand === "__new__" && (
                   <Input
                     placeholder="Enter new model name"
                     value={newBrand}
@@ -462,7 +559,7 @@ export default function AdminDashboard() {
                     className={brandError ? "border-red-500" : ""}
                   />
                 )}
-                <Input placeholder="model name" value={deviceForm.brand} onChange={e => setDeviceForm(f => ({ ...f, brand: e.target.value }))} />
+                <Input placeholder="model name" value={deviceForm.model} onChange={e => setDeviceForm(f => ({ ...f, model: e.target.value }))} />
                 {brandError && <div className="text-red-500 text-sm">{brandError}</div>}
               </div>
               <DialogFooter>
@@ -546,13 +643,14 @@ export default function AdminDashboard() {
         </div>
 
         {/* Main Content Tabs */}
-        <Tabs defaultValue="agent-requests" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="agent-requests">Agent Requests ({loading ? "..." : stats?.pendingAgents ?? 0})</TabsTrigger>
             <TabsTrigger value="agents">Agents</TabsTrigger>
             <TabsTrigger value="bookings">All Bookings</TabsTrigger>
             <TabsTrigger value="cities">City Management</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="faults">Faults Management</TabsTrigger>
           </TabsList>
 
           {/* Agent Requests Tab */}
@@ -994,6 +1092,117 @@ export default function AdminDashboard() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Faults Management Tab */}
+          <TabsContent value="faults" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Faults Management</CardTitle>
+                <CardDescription>Manage faults for each device</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {faultsTabLoading ? (
+                  <div>Loading devices and faults...</div>
+                ) : (
+                  <div>
+                    <div className="mb-4 flex gap-2 items-end">
+                      <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId} className="w-64">
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select device" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {faultsTabDevices.map((d) => (
+                            <SelectItem key={d.id} value={d.id}>{d.model}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" onClick={() => setShowAddFault(true)} disabled={!selectedDeviceId}>
+                        <Plus className="h-4 w-4 mr-1" /> Add Fault
+                      </Button>
+                    </div>
+                    {selectedDeviceId && (
+                      <div className="space-y-2">
+                        <h4 className="font-semibold mb-2">Faults for this device</h4>
+                        <table className="min-w-full border text-sm">
+                          <thead>
+                            <tr className="bg-muted">
+                              <th className="px-2 py-1 text-left">Name</th>
+                              <th className="px-2 py-1 text-left">Description</th>
+                              <th className="px-2 py-1 text-right">Price</th>
+                              <th className="px-2 py-1 text-center">Active</th>
+                              <th className="px-2 py-1 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {faultsTabFaults.filter(f => f.device_id === selectedDeviceId).map(fault => (
+                              <tr key={fault.id} className={fault.is_active ? "" : "opacity-50"}>
+                                <td className="px-2 py-1">{fault.name}</td>
+                                <td className="px-2 py-1">{fault.description}</td>
+                                <td className="px-2 py-1 text-right">₹{fault.price}</td>
+                                <td className="px-2 py-1 text-center">{fault.is_active ? "Yes" : "No"}</td>
+                                <td className="px-2 py-1 text-center flex gap-2 justify-center">
+                                  <Button size="icon" variant="ghost" onClick={() => {
+                                    setEditingFault(fault);
+                                    setEditFaultForm({ name: fault.name, description: fault.description || "", price: String(fault.price) });
+                                  }}><Pencil className="h-4 w-4" /></Button>
+                                  <Button size="icon" variant="ghost" onClick={() => handleDeleteFault(fault.id)} disabled={!fault.is_active}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {faultsTabError && <div className="text-red-500 mt-2">{faultsTabError}</div>}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            {/* Add Fault Dialog */}
+            {showAddFault && (
+              <Dialog open={showAddFault} onOpenChange={setShowAddFault}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Fault</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <Input placeholder="Fault name" value={addFaultForm.name} onChange={e => setAddFaultForm(f => ({ ...f, name: e.target.value }))} />
+                    <Input placeholder="Description (optional)" value={addFaultForm.description} onChange={e => setAddFaultForm(f => ({ ...f, description: e.target.value }))} />
+                    <Input placeholder="Price" type="number" value={addFaultForm.price} onChange={e => setAddFaultForm(f => ({ ...f, price: e.target.value }))} />
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={handleAddFault}>Add</Button>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                  </DialogFooter>
+                  {faultsTabError && <div className="text-red-500 mt-2">{faultsTabError}</div>}
+                </DialogContent>
+              </Dialog>
+            )}
+            {/* Edit Fault Dialog */}
+            {editingFault && (
+              <Dialog open={!!editingFault} onOpenChange={open => { if (!open) setEditingFault(null); }}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Edit Fault</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <Input placeholder="Fault name" value={editFaultForm.name} onChange={e => setEditFaultForm(f => ({ ...f, name: e.target.value }))} />
+                    <Input placeholder="Description (optional)" value={editFaultForm.description} onChange={e => setEditFaultForm(f => ({ ...f, description: e.target.value }))} />
+                    <Input placeholder="Price" type="number" value={editFaultForm.price} onChange={e => setEditFaultForm(f => ({ ...f, price: e.target.value }))} />
+                  </div>
+                  <DialogFooter>
+                    <Button onClick={handleEditFault}>Save</Button>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                  </DialogFooter>
+                  {faultsTabError && <div className="text-red-500 mt-2">{faultsTabError}</div>}
+                </DialogContent>
+              </Dialog>
+            )}
           </TabsContent>
         </Tabs>
       </div>

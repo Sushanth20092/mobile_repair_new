@@ -26,32 +26,58 @@ const AuthContext = createContext<AuthContextProps | undefined>(undefined)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
 
+  // Helper function to fetch user profile from profiles table
+  const fetchUserProfile = async (userId: string, email: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('name, role')
+        .eq('id', userId)
+        .single()
+      
+      if (error || !profile) {
+        console.error('Error fetching user profile:', error)
+        return null
+      }
+      
+      return {
+        id: userId,
+        name: profile.name || "",
+        email: email,
+        role: profile.role as Role,
+      }
+    } catch (error) {
+      console.error('Error in fetchUserProfile:', error)
+      return null
+    }
+  }
+
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const { id, email, user_metadata } = session.user
-        setUser({
-          id,
-          name: user_metadata?.name || "",
-          email: email!,
-          role: user_metadata?.role || "customer",
-        })
+        const { id, email } = session.user
+        const userProfile = await fetchUserProfile(id, email!)
+        if (userProfile) {
+          setUser(userProfile)
+        } else {
+          setUser(null)
+        }
       } else {
         setUser(null)
       }
     })
+    
     // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
-        const { id, email, user_metadata } = session.user
-        setUser({
-          id,
-          name: user_metadata?.name || "",
-          email: email!,
-          role: user_metadata?.role || "customer",
-        })
+        const { id, email } = session.user
+        const userProfile = await fetchUserProfile(id, email!)
+        if (userProfile) {
+          setUser(userProfile)
+        }
       }
     })
+    
     return () => {
       listener?.subscription.unsubscribe()
     }

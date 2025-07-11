@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       phone: application.phone,
       experience: application.experience,
       name: application.name,
+      status: 'approved', // Explicitly set status to approved
       // All other fields use default values
     }]);
     if (agentError) {

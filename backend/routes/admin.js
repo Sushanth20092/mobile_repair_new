@@ -96,35 +96,39 @@ router.delete("/cities/:id", async (req, res) => {
   res.json({ message: "City deleted successfully" })
 })
 
-// Manage Devices
-router.get("/devices", async (req, res) => {
-  const token = req.headers["authorization"]?.split(" ")[1]
-  if (!token || !(await isAdmin(token))) return res.status(403).json({ message: "Access denied" })
+// Get all bookings with related data
+router.get("/bookings", auth, async (req, res) => {
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("*, user:profiles(name, email), device:devices(category, model, brand_id), agent:profiles(shopName)")
+    .order("created_at", { ascending: false })
+  if (error) return res.status(400).json({ message: error.message })
+  res.json({ bookings: data })
+})
+
+// Get all devices
+router.get("/devices", auth, async (req, res) => {
   const { category, brand } = req.query
   let query = supabase.from("devices").select("*")
   if (category) query = query.eq("category", category)
-  if (brand) query = query.eq("brand", brand)
-  const { data: devices, error } = await query.order("category").order("brand").order("model")
-  if (error) return res.status(500).json({ message: error.message })
+  if (brand) query = query.eq("model", brand)
+  const { data: devices, error } = await query.order("category").order("model").order("brand_id")
+  if (error) return res.status(400).json({ message: error.message })
   res.json({ devices })
 })
 
-router.post("/devices", async (req, res) => {
-  const token = req.headers["authorization"]?.split(" ")[1]
-  if (!token || !(await isAdmin(token))) return res.status(403).json({ message: "Access denied" })
-  const { category_id, brand, model_id, image, commonFaults } = req.body
-  try {
-    const { data: device, error } = await supabase.from("devices").insert([{ category_id, brand, model_id, image, commonFaults }]).select().single()
-    if (error) {
-      if (error.message && error.message.toLowerCase().includes("duplicate")) {
-        return res.status(409).json({ message: "Device with this category, brand, and model already exists." })
-      }
-      return res.status(500).json({ message: error.message })
+// Add new device
+router.post("/devices", auth, async (req, res) => {
+  const { category_id, model, brand_id, image, commonFaults } = req.body
+  if (!category_id || !model || !brand_id) return res.status(400).json({ message: "Missing required fields" })
+  const { data: device, error } = await supabase.from("devices").insert([{ category_id, model, brand_id, image, commonFaults }]).select().single()
+  if (error) {
+    if (error.message.includes("duplicate")) {
+      return res.status(409).json({ message: "Device with this category, model, and brand already exists." })
     }
-    res.status(201).json({ message: "Device added successfully", device })
-  } catch (err) {
-    res.status(500).json({ message: err.message })
+    return res.status(400).json({ message: error.message })
   }
+  res.json({ device })
 })
 
 router.patch("/devices/:id", async (req, res) => {

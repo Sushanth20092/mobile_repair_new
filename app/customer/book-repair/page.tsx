@@ -24,20 +24,14 @@ import { format } from "date-fns"
 import { supabase } from "@/lib/api"
 
 type Category = { id: string; name: string };
-type Model = { id: string; name: string; category_id: string };
+type Brand = { id: string; name: string; category_id: string };
 
-const commonFaults = [
-  "Screen Cracked/Broken",
-  "Battery Issues",
-  "Charging Port Problems",
-  "Water Damage",
-  "Speaker/Audio Issues",
-  "Camera Problems",
-  "Software Issues",
-  "Button Not Working",
-  "Overheating",
-  "Network/Connectivity Issues",
-]
+// Add new type for Fault
+interface Fault {
+  id: string;
+  name: string;
+  price: number;
+}
 
 export default function BookRepairPage() {
   const router = useRouter()
@@ -66,6 +60,7 @@ export default function BookRepairPage() {
     promoCode: "",
     paymentMethod: "",
     newModel: "", // Added for new model input
+    customModel: "", // Added for custom model input
   })
 
   const steps = [
@@ -81,9 +76,19 @@ export default function BookRepairPage() {
   const [agentsLoading, setAgentsLoading] = useState(true)
   const [userCity, setUserCity] = useState<string>("")
   const [categories, setCategories] = useState<Category[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
   const [categoryLoading, setCategoryLoading] = useState(false);
-  const [modelLoading, setModelLoading] = useState(false);
+  const [brandLoading, setBrandLoading] = useState(false);
+  // Add models state
+  const [models, setModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  // Add state for faults fetched from Supabase
+  const [faults, setFaults] = useState<Fault[]>([]);
+  const [faultsLoading, setFaultsLoading] = useState(false);
+  // Add state for selected deviceId (model selection should yield deviceId)
+  const [deviceId, setDeviceId] = useState<string>("");
+  // 1. Add a new state for user profile (to get city_id)
+  const [userProfile, setUserProfile] = useState<any>(null);
 
   useEffect(() => {
     // Fetch cities
@@ -91,16 +96,38 @@ export default function BookRepairPage() {
       setCities(data || [])
       setCitiesLoading(false)
     })
-    // Fetch agents
-    supabase.from('agents').select('*').then(({ data, error }) => {
-      setAgents(data || [])
-      setAgentsLoading(false)
-    })
-    // Fetch user profile
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUserCity(user?.user_metadata?.city || "")
-    })
-  }, [])
+    // Fetch user profile (to get city_id)
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        // Fetch from profiles table using user.id
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+        setUserProfile(profile);
+        setUserCity(profile?.city_id || "");
+        // Fetch agents only after getting city_id
+        if (profile?.city_id) {
+          setAgentsLoading(true);
+          supabase
+            .from('agents')
+            .select('*')
+            .eq('city_id', profile.city_id)
+            .eq('status', 'approved')
+            .eq('is_online', true)
+            .then(({ data, error }) => {
+              setAgents(data || []);
+              setAgentsLoading(false);
+            });
+        } else {
+          setAgents([]);
+          setAgentsLoading(false);
+        }
+      } else {
+        setUserProfile(null);
+        setUserCity("");
+        setAgents([]);
+        setAgentsLoading(false);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     setCategoryLoading(true);
@@ -112,15 +139,83 @@ export default function BookRepairPage() {
 
   useEffect(() => {
     if (formData.category) {
-      setModelLoading(true);
-      supabase.from('models').select('*').eq('category_id', formData.category).then(({ data }) => {
-        setModels(data || []);
-        setModelLoading(false);
+      setBrandLoading(true);
+      supabase.from('brands').select('*').eq('category_id', formData.category).then(({ data }) => {
+        setBrands(data || []);
+        setBrandLoading(false);
       });
+    } else {
+      setBrands([]);
+    }
+  }, [formData.category]);
+
+  // Fetch models when category and brand are selected
+  useEffect(() => {
+    if (formData.category && formData.brand) {
+      setModelsLoading(true);
+      fetch(`/api/devices?category_id=${formData.category}&brand_id=${formData.brand}`)
+        .then(res => res.json())
+        .then(data => {
+          setModels(data.models || []);
+          setModelsLoading(false);
+        })
+        .catch(() => {
+          setModels([]);
+          setModelsLoading(false);
+        });
     } else {
       setModels([]);
     }
-  }, [formData.category]);
+  }, [formData.category, formData.brand]);
+
+  // Fetch deviceId when model is selected
+  useEffect(() => {
+    if (formData.category && formData.brand && formData.model) {
+      // Fetch the deviceId for the selected model
+      supabase
+        .from('devices')
+        .select('id')
+        .eq('category_id', formData.category)
+        .eq('brand_id', formData.brand)
+        .eq('model', formData.model)
+        .maybeSingle()
+        .then(({ data }) => {
+          setDeviceId(data?.id || "");
+        });
+    } else {
+      setDeviceId("");
+    }
+  }, [formData.category, formData.brand, formData.model]);
+
+  // Fetch faults when deviceId changes
+  useEffect(() => {
+    if (deviceId) {
+      setFaultsLoading(true);
+      supabase
+        .from('faults')
+        .select('id, name, price')
+        .eq('device_id', deviceId)
+        .eq('is_active', true)
+        .then(({ data }) => {
+          setFaults(data || []);
+          setFaultsLoading(false);
+        });
+    } else {
+      setFaults([]);
+    }
+  }, [deviceId]);
+
+  // Selected faults state: array of Fault objects
+  const [selectedFaults, setSelectedFaults] = useState<Fault[]>([]);
+
+  // Handle fault checkbox toggle
+  const handleFaultToggle = (fault: Fault) => {
+    const exists = selectedFaults.some(f => f.id === fault.id);
+    setSelectedFaults(exists
+      ? selectedFaults.filter(f => f.id !== fault.id)
+      : [...selectedFaults, fault]
+    );
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -147,13 +242,6 @@ export default function BookRepairPage() {
   const removeImage = (index: number) => {
     const newImages = formData.images.filter((_, i) => i !== index)
     setFormData({ ...formData, images: newImages })
-  }
-
-  const handleFaultToggle = (fault: string) => {
-    const newFaults = formData.faults.includes(fault)
-      ? formData.faults.filter((f) => f !== fault)
-      : [...formData.faults, fault]
-    setFormData({ ...formData, faults: newFaults })
   }
 
   const getAvailableTimes = () => {
@@ -186,23 +274,30 @@ export default function BookRepairPage() {
     return basePrice
   }
 
+  // Update handleSubmit to save selectedFaults in the booking
   const handleSubmit = async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
       // Insert booking into Supabase
       const { data, error } = await supabase.from('bookings').insert([
-        { ...formData, images: formData.images }
-      ])
-      if (error) throw error
-      const bookingId = (data as any)?.[0]?.id
-      toast({ title: "Success", description: `Repair booked successfully! Booking ID: ${bookingId}` })
-      router.push(`/customer/book-repair/confirmation?bookingId=${bookingId}`)
+        {
+          ...formData,
+          agent_id: formData.selectedAgent || null,
+          images: formData.images,
+          device_id: deviceId,
+          faults: selectedFaults.map(f => ({ id: f.id, name: f.name, price: f.price })),
+        }
+      ]);
+      if (error) throw error;
+      const bookingId = (data as any)?.[0]?.id;
+      toast({ title: "Success", description: `Repair booked successfully! Booking ID: ${bookingId}` });
+      router.push(`/customer/book-repair/confirmation?bookingId=${bookingId}`);
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to book repair. Please try again.", variant: "destructive" })
+      toast({ title: "Error", description: error.message || "Failed to book repair. Please try again.", variant: "destructive" });
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const nextStep = () => {
     if (currentStep < steps.length) {
@@ -219,7 +314,7 @@ export default function BookRepairPage() {
   const canProceed = () => {
     switch (currentStep) {
       case 1:
-        return formData.category && formData.brand && formData.model && formData.faults.length > 0
+        return formData.category && formData.brand && formData.model && selectedFaults.length > 0
       case 2:
         if (formData.serviceType === "local") {
           return formData.selectedAgent
@@ -332,66 +427,76 @@ export default function BookRepairPage() {
                         <SelectValue placeholder="Select brand" />
                       </SelectTrigger>
                       <SelectContent>
-                        {/* This part needs to be dynamic based on the selected category */}
-                        {/* For now, it's a placeholder, as models are fetched dynamically */}
-                        {/* When a category is selected, fetch models for that category */}
-                        {/* For now, it will be empty until models are fetched */}
+                        {brands.map(brand => (
+                          <SelectItem key={brand.id} value={brand.id}>{brand.name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
 
                 {/* Model Selection */}
-                {formData.category && (
+                {formData.category && formData.brand && (
                   <div className="space-y-3">
                     <Label className="text-base font-medium">Model</Label>
                     <Select
-                      value={formData.model === "__new__" ? "__new__" : formData.model}
+                      value={formData.model}
                       onValueChange={val => setFormData(f => ({ ...f, model: val }))}
-                      disabled={!formData.category || modelLoading}
+                      disabled={!formData.category || !formData.brand}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder={modelLoading ? "Loading..." : "Select model"} />
+                        <SelectValue placeholder="Select model" />
                       </SelectTrigger>
                       <SelectContent>
-                        {models.map(model => (
-                          <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
-                        ))}
-                        <SelectItem value="__new__">Add new model...</SelectItem>
+                        {modelsLoading ? (
+                          <div>Loading models...</div>
+                        ) : models.length === 0 ? (
+                          <div>No models found.</div>
+                        ) : (
+                          models.map(model => (
+                            <SelectItem key={model} value={model}>{model}</SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
                 )}
-                {formData.model === "__new__" && (
+                {formData.model === "custom" && (
                   <Input
-                    placeholder="Enter new model name"
-                    value={formData.newModel || ""}
-                    onChange={e => setFormData(f => ({ ...f, newModel: e.target.value }))}
+                    placeholder="Enter your device model"
+                    value={formData.customModel || ""}
+                    onChange={e => setFormData(f => ({ ...f, customModel: e.target.value }))}
                   />
                 )}
 
-                {/* Fault Selection */}
+                {/* Fault Selection (dynamic) */}
                 <div className="space-y-3">
                   <Label className="text-base font-medium">
                     What's wrong with your device? (Select all that apply)
                   </Label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {commonFaults.map((fault) => (
-                      <div key={fault} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={fault}
-                          checked={formData.faults.includes(fault)}
-                          onCheckedChange={() => handleFaultToggle(fault)}
-                        />
-                        <Label htmlFor={fault} className="text-sm">
-                          {fault}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
+                  {faultsLoading ? (
+                    <div>Loading faults...</div>
+                  ) : faults.length === 0 ? (
+                    <div>No faults found for this device.</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {faults.map((fault) => (
+                        <div key={fault.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={fault.id}
+                            checked={selectedFaults.some(f => f.id === fault.id)}
+                            onCheckedChange={() => handleFaultToggle(fault)}
+                          />
+                          <Label htmlFor={fault.id} className="text-sm">
+                            {fault.name} <span className="ml-2 text-muted-foreground">₹{fault.price}</span>
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {/* Custom Fault */}
+                {/* Custom Fault (optional, unchanged) */}
                 <div className="space-y-3">
                   <Label htmlFor="customFault">Additional Details (Optional)</Label>
                   <Textarea
@@ -479,9 +584,58 @@ export default function BookRepairPage() {
                         <p className="text-sm text-muted-foreground mt-2">
                           Drop off your device at a nearby repair center
                         </p>
+                        {/* Agent List or Fallback Message (directly below Local Dropoff) */}
+                        {formData.serviceType === "local" && (
+                          <div className="mt-4 space-y-4">
+                            <Label className="text-base font-medium">Select Repair Center</Label>
+                            <div className="space-y-3">
+                              {agentsLoading ? (
+                                <div>Loading agents...</div>
+                              ) : agents.length === 0 ? (
+                                <div className="text-muted-foreground">No agents are currently available for local dropoff in your area.</div>
+                              ) : (
+                                agents.map((agent) => (
+                                  <div
+                                    key={agent.id}
+                                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                      formData.selectedAgent === agent.id
+                                        ? "border-primary bg-primary/5"
+                                        : "border-muted hover:border-primary/50"
+                                    }`}
+                                    onClick={() => setFormData({ ...formData, selectedAgent: agent.id })}
+                                  >
+                                    <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                                      <div>
+                                        <h3 className="font-medium text-lg">{agent.name}</h3>
+                                        <div className="text-sm text-muted-foreground mb-1">
+                                          {agent.shop_name} <span className="mx-2">|</span> {agent.shop_address_street}, {agent.shop_address_pincode}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 mb-1">
+                                          {Array.isArray(agent.specializations) && agent.specializations.length > 0 && (agent.specializations as string[]).map((spec: string, idx: number) => (
+                                            <span key={idx} className="inline-block bg-muted px-2 py-0.5 rounded text-xs">{spec}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1 min-w-[120px]">
+                                        <div className="flex items-center gap-1 text-sm">
+                                          <span className="text-yellow-500">★</span>
+                                          <span className="font-semibold">{agent.rating_average ? agent.rating_average.toFixed(1) : 'N/A'}</span>
+                                          <span className="text-muted-foreground">({agent.rating_count || 0} reviews)</span>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">{agent.completed_jobs || 0} jobs completed</div>
+                                        {agent.last_seen && (
+                                          <div className="text-xs text-muted-foreground">Last seen: {new Date(agent.last_seen).toLocaleString()}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-
-                      {/* Collection & Delivery */}
+                      {/* Collection & Delivery (unchanged) */}
                       <div
                         className={`border rounded-lg p-4 ${formData.serviceType === "collection" ? "border-primary bg-primary/5" : "border-muted"}`}
                       >
@@ -495,8 +649,7 @@ export default function BookRepairPage() {
                           We'll collect from your address and deliver back
                         </p>
                       </div>
-
-                      {/* Postal Service */}
+                      {/* Postal Service (unchanged) */}
                       <div
                         className={`border rounded-lg p-4 ${formData.serviceType === "postal" ? "border-primary bg-primary/5" : "border-muted"}`}
                       >
@@ -513,53 +666,7 @@ export default function BookRepairPage() {
                     </div>
                   </RadioGroup>
                 </div>
-
-                {/* Agent Selection for Local Dropoff and Collection */}
-                {(formData.serviceType === "local" || formData.serviceType === "collection") && (
-                  <div className="space-y-4">
-                    <Label className="text-base font-medium">Select Repair Center</Label>
-                    <div className="space-y-3">
-                      {agentsLoading ? (
-                        <div>Loading agents...</div>
-                      ) : agents.length === 0 ? (
-                        <div>No agents available.</div>
-                      ) : (
-                        agents
-                          .filter(agent => (formData.serviceType === "local" || formData.serviceType === "collection") ? agent.city?.name === userCity : true)
-                          .map((agent) => (
-                            <div
-                              key={agent._id}
-                              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                formData.selectedAgent === agent._id
-                                  ? "border-primary bg-primary/5"
-                                  : "border-muted hover:border-primary/50"
-                              }`}
-                              onClick={() => setFormData({ ...formData, selectedAgent: agent._id })}
-                            >
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <h3 className="font-medium">{agent.shopName || agent.name}</h3>
-                                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                                    <MapPin className="h-3 w-3" />
-                                    {agent.shopAddress?.city || agent.city?.name || agent.city}
-                                  </p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <div className="flex items-center">
-                                      <span className="text-sm font-medium">{agent.rating?.average || agent.rating || "N/A"}</span>
-                                      <span className="text-yellow-500 ml-1">★</span>
-                                    </div>
-                                    <span className="text-sm text-muted-foreground">({agent.reviews?.length || 0} reviews)</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Address Details for Collection & Delivery */}
+                {/* Restore the original address/date/city input forms for 'collection' and 'postal' below the RadioGroup, only when those service types are selected */}
                 {formData.serviceType === "collection" && (
                   <div className="space-y-4">
                     <Label className="text-base font-medium">Collection & Delivery Address</Label>
@@ -609,7 +716,6 @@ export default function BookRepairPage() {
                         </div>
                       </div>
                     </div>
-
                     {/* Collection Date & Time */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -651,7 +757,6 @@ export default function BookRepairPage() {
                         </Select>
                       </div>
                     </div>
-
                     {/* Delivery Date & Time */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -695,8 +800,6 @@ export default function BookRepairPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Address Details for Postal Service */}
                 {formData.serviceType === "postal" && (
                   <div className="space-y-4">
                     <Label className="text-base font-medium">Postal Address</Label>
@@ -848,7 +951,7 @@ export default function BookRepairPage() {
                     </div>
                     <div className="flex justify-between">
                       <span>Issues:</span>
-                      <span className="font-medium">{formData.faults.join(", ")}</span>
+                      <span className="font-medium">{selectedFaults.map(f => f.name).join(", ")}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Service Type:</span>
@@ -858,7 +961,7 @@ export default function BookRepairPage() {
                       <div className="flex justify-between">
                         <span>Repair Center:</span>
                         <span className="font-medium">
-                          {agents.find((a) => a._id === formData.selectedAgent)?.name}
+                          {agents.find((a) => a.id === formData.selectedAgent)?.name}
                         </span>
                       </div>
                     )}

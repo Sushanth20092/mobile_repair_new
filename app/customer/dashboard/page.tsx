@@ -23,6 +23,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { useRouter } from "next/navigation"
 import { apiGet } from "@/lib/api"
+import { supabase } from "@/lib/api"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -69,10 +70,10 @@ export default function CustomerDashboard() {
       })
   }, [])
 
-  const handleLogout = () => {
-    logout()
-    router.push("/")
-  }
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   return (
     <DashboardLayout>

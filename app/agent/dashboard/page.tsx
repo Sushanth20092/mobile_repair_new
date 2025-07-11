@@ -12,7 +12,6 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/api"
-import { useAgentStatus } from '@/hooks/use-agent-status'
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -44,12 +43,24 @@ export default function AgentDashboard() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const { toast } = useToast()
-  const { status: agentStatus, loading: statusLoading } = useAgentStatus(user?.id)
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [profileLoading, setProfileLoading] = useState(true)
 
   useEffect(() => {
+    // Add a small delay to allow auth context to load user profile
+    const timer = setTimeout(() => {
+      setProfileLoading(false)
+    }, 1000)
+
+    return () => clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    // Don't redirect until profile is loaded
+    if (profileLoading) return
+
     if (!user) {
       router.replace('/auth/login')
       return
@@ -58,10 +69,8 @@ export default function AgentDashboard() {
       router.replace('/')
       return
     }
-    if (!statusLoading && agentStatus !== 'approved') {
-      router.replace('/agent/waiting-approval')
-    }
-  }, [user, agentStatus, statusLoading, router])
+    // Removed waiting-approval redirect logic since only approved agents are in the agents table
+  }, [user, router, profileLoading])
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -114,14 +123,28 @@ export default function AgentDashboard() {
     })
   }
 
-  const handleLogout = () => {
-    logout()
-    router.push("/")
-  }
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   const pendingJobs = jobs.filter((job) => job.status === "pending")
   const activeJobs = jobs.filter((job) => job.status === "in-progress")
   const completedJobs = jobs.filter((job) => job.status === "completed")
+
+  // Show loading state while profile is being fetched
+  if (profileLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading your dashboard...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
