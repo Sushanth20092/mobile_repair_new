@@ -1,3 +1,5 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.agent_applications (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -70,14 +72,12 @@ CREATE TABLE public.bookings (
   device_id uuid NOT NULL,
   faults jsonb,
   images ARRAY DEFAULT '{}'::text[],
-  service_type text NOT NULL CHECK (service_type = ANY (ARRAY['local_dropoff'::text, 'collection_delivery'::text, 'postal'::text])),
   address_street text,
   address_city text,
   address_state text,
   address_pincode text,
   address_landmark text,
   city_id uuid NOT NULL,
-  duration text NOT NULL CHECK (duration = ANY (ARRAY['express'::text, 'standard'::text, 'economy'::text])),
   scheduled_date date,
   scheduled_time text,
   pricing_service_charge double precision DEFAULT 0,
@@ -96,11 +96,19 @@ CREATE TABLE public.bookings (
   cancellation_reason text,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  service_type_id uuid NOT NULL,
+  duration_type_id uuid,
+  delivery_date date,
+  delivery_time text,
+  collection_date date,
+  collection_time text,
   CONSTRAINT bookings_pkey PRIMARY KEY (id),
-  CONSTRAINT bookings_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
   CONSTRAINT bookings_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT bookings_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
   CONSTRAINT bookings_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id),
-  CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+  CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT bookings_duration_type_id_fkey FOREIGN KEY (duration_type_id) REFERENCES public.duration_types(id),
+  CONSTRAINT bookings_service_type_id_fkey FOREIGN KEY (service_type_id) REFERENCES public.service_types(id)
 );
 CREATE TABLE public.brands (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -171,9 +179,21 @@ CREATE TABLE public.devices (
   category_id uuid NOT NULL,
   brand_id uuid NOT NULL,
   CONSTRAINT devices_pkey PRIMARY KEY (id),
-  CONSTRAINT devices_model_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
   CONSTRAINT devices_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
+  CONSTRAINT devices_model_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
   CONSTRAINT devices_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id)
+);
+CREATE TABLE public.duration_types (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  label text NOT NULL,
+  description text,
+  extra_charge double precision NOT NULL DEFAULT 0,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  sort_order integer DEFAULT 0,
+  CONSTRAINT duration_types_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.faults (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -201,8 +221,8 @@ CREATE TABLE public.profiles (
   addresses jsonb DEFAULT '[]'::jsonb,
   email text NOT NULL UNIQUE,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
-  CONSTRAINT fk_profiles_user FOREIGN KEY (id) REFERENCES auth.users(id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id),
+  CONSTRAINT fk_profiles_user FOREIGN KEY (id) REFERENCES auth.users(id),
   CONSTRAINT profiles_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
 );
 CREATE TABLE public.reviews (
@@ -222,4 +242,15 @@ CREATE TABLE public.reviews (
   CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT reviews_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id),
   CONSTRAINT reviews_response_responded_by_fkey FOREIGN KEY (response_responded_by) REFERENCES public.agents(id)
+);
+CREATE TABLE public.service_types (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  label text NOT NULL,
+  description text,
+  is_active boolean DEFAULT true,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  sort_order integer,
+  CONSTRAINT service_types_pkey PRIMARY KEY (id)
 );

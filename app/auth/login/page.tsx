@@ -32,6 +32,7 @@ export default function LoginPage() {
   const { login, signup, forgotPassword, user } = useAuth()
   const { toast } = useToast()
   const [cities, setCities] = useState<City[]>([])
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
   const supabaseClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,6 +59,64 @@ export default function LoginPage() {
     pincode: "",
     agreeToTerms: false,
   })
+
+  // Validate form fields
+  const validateField = (name: string, value: string | boolean) => {
+    let error = ""
+    
+    switch (name) {
+      case "name":
+        if (!value) error = "Full name is required"
+        break
+      case "email":
+        if (!value) {
+          error = "Email is required"
+        } else if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(value as string)) {
+          error = "Invalid email address"
+        }
+        break
+      case "phone":
+        if (!value) {
+          error = "Phone number is required"
+        } else if (!/^[0-9]{10}$/.test(value as string)) {
+          error = "Invalid phone number (10 digits required)"
+        }
+        break
+      case "password":
+        if (!value) {
+          error = "Password is required"
+        } else if ((value as string).length < 6) {
+          error = "Password must be at least 6 characters"
+        }
+        break
+      case "confirmPassword":
+        if (value !== registerData.password) {
+          error = "Passwords do not match"
+        }
+        break
+      case "city_id":
+        if (!value) error = "City is required"
+        break
+      case "agreeToTerms":
+        if (!value) error = "You must agree to the terms"
+        break
+    }
+    
+    return error
+  }
+
+  // Handle field blur validation
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target
+    const error = validateField(name, value)
+    setErrors(prev => ({ ...prev, [name]: error }))
+  }
+
+  // Handle select blur validation
+  const handleSelectBlur = (name: string, value: string) => {
+    const error = validateField(name, value)
+    setErrors(prev => ({ ...prev, [name]: error }))
+  }
 
   // Fetch cities on component mount
   useEffect(() => {
@@ -118,24 +177,29 @@ export default function LoginPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    
+    // Validate all fields before submission
+    const validationErrors: Record<string, string> = {}
+    Object.entries(registerData).forEach(([key, value]) => {
+      if (key !== 'address' && key !== 'pincode') { // These are optional fields
+        const error = validateField(key, value)
+        if (error) validationErrors[key] = error
+      }
+    })
+    
+    // Special validation for password match
+    if (registerData.password !== registerData.confirmPassword) {
+      validationErrors.confirmPassword = "Passwords do not match"
+    }
+    
+    setErrors(validationErrors)
+    
+    if (Object.keys(validationErrors).length > 0) {
+      setIsLoading(false)
+      return
+    }
+    
     try {
-      if (!registerData.name || !registerData.email || !registerData.password || !registerData.city_id) {
-        toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" })
-        return
-      }
-      if (registerData.password !== registerData.confirmPassword) {
-        toast({ title: "Error", description: "Passwords do not match", variant: "destructive" })
-        return
-      }
-      if (registerData.password.length < 6) {
-        toast({ title: "Error", description: "Password must be at least 6 characters", variant: "destructive" })
-        return
-      }
-      if (!registerData.agreeToTerms) {
-        toast({ title: "Error", description: "Please agree to terms and conditions", variant: "destructive" })
-        return
-      }
-      
       console.log('Sending registration request:', {
         name: registerData.name,
         email: registerData.email,
@@ -284,23 +348,6 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  {/* <div className="space-y-2">
-                    <Label htmlFor="role">Login as</Label>
-                    <Select
-                      value={loginData.role}
-                      onValueChange={(value) => setLoginData({ ...loginData, role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="user">User</SelectItem>
-                        <SelectItem value="agent">Agent</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div> */}
-
                   <div className="flex items-center justify-between">
                     <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
                       Forgot password?
@@ -320,22 +367,28 @@ export default function LoginPage() {
                       <Label htmlFor="name">Full Name *</Label>
                       <Input
                         id="name"
+                        name="name"
                         placeholder="Enter your name"
                         value={registerData.name}
                         onChange={(e) => setRegisterData({ ...registerData, name: e.target.value })}
+                        onBlur={handleBlur}
                         required
                       />
+                      {errors.name && <p className="text-sm text-red-500">{errors.name}</p>}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone *</Label>
                       <Input
                         id="phone"
+                        name="phone"
                         placeholder="Enter phone number"
                         value={registerData.phone}
                         onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
+                        onBlur={handleBlur}
                         required
                       />
+                      {errors.phone && <p className="text-sm text-red-500">{errors.phone}</p>}
                     </div>
                   </div>
 
@@ -343,18 +396,22 @@ export default function LoginPage() {
                     <Label htmlFor="register-email">Email *</Label>
                     <Input
                       id="register-email"
+                      name="email"
                       type="email"
                       placeholder="Enter your email"
                       value={registerData.email}
                       onChange={(e) => setRegisterData({ ...registerData, email: e.target.value })}
+                      onBlur={handleBlur}
                       required
                     />
+                    {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="address">Address</Label>
                     <Input
                       id="address"
+                      name="address"
                       placeholder="Enter your address"
                       value={registerData.address}
                       onChange={(e) => setRegisterData({ ...registerData, address: e.target.value })}
@@ -367,6 +424,7 @@ export default function LoginPage() {
                       <Select
                         value={registerData.city_id}
                         onValueChange={(value) => setRegisterData({ ...registerData, city_id: value })}
+                        onOpenChange={(open) => !open && handleSelectBlur("city_id", registerData.city_id)}
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select your city" />
@@ -379,12 +437,14 @@ export default function LoginPage() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {errors.city_id && <p className="text-sm text-red-500">{errors.city_id}</p>}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="pincode">Pincode</Label>
                       <Input
                         id="pincode"
+                        name="pincode"
                         placeholder="Enter pincode"
                         value={registerData.pincode}
                         onChange={(e) => setRegisterData({ ...registerData, pincode: e.target.value })}
@@ -397,34 +457,42 @@ export default function LoginPage() {
                       <Label htmlFor="register-password">Password *</Label>
                       <Input
                         id="register-password"
+                        name="password"
                         type="password"
                         placeholder="Create password"
                         value={registerData.password}
                         onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                        onBlur={handleBlur}
                         required
                       />
+                      {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="confirm-password">Confirm Password *</Label>
                       <Input
                         id="confirm-password"
+                        name="confirmPassword"
                         type="password"
                         placeholder="Confirm password"
                         value={registerData.confirmPassword}
                         onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
+                        onBlur={handleBlur}
                         required
                       />
+                      {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
                     </div>
                   </div>
 
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="terms"
+                      name="agreeToTerms"
                       checked={registerData.agreeToTerms}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked) => {
                         setRegisterData({ ...registerData, agreeToTerms: checked as boolean })
-                      }
+                        setErrors(prev => ({ ...prev, agreeToTerms: checked ? "" : "You must agree to the terms" }))
+                      }}
                     />
                     <Label htmlFor="terms" className="text-sm">
                       I agree to the{" "}
@@ -433,6 +501,7 @@ export default function LoginPage() {
                       </Link>
                     </Label>
                   </div>
+                  {errors.agreeToTerms && <p className="text-sm text-red-500">{errors.agreeToTerms}</p>}
 
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? "Creating Account..." : "Create Account"}

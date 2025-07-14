@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Wrench, Clock, CheckCircle, AlertCircle, MessageCircle, Star, MapPin, Calendar, Phone, LogOut } from "lucide-react"
+import { Switch } from "@/components/ui/switch"
+import { Wrench, Clock, CheckCircle, AlertCircle, MessageCircle, Star, MapPin, Calendar, Phone, LogOut, Wifi, WifiOff } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { useToast } from "@/hooks/use-toast"
@@ -47,6 +48,8 @@ export default function AgentDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [profileLoading, setProfileLoading] = useState(true)
+  const [isOnline, setIsOnline] = useState(false)
+  const [onlineStatusLoading, setOnlineStatusLoading] = useState(true)
 
   useEffect(() => {
     // Add a small delay to allow auth context to load user profile
@@ -71,6 +74,59 @@ export default function AgentDashboard() {
     }
     // Removed waiting-approval redirect logic since only approved agents are in the agents table
   }, [user, router, profileLoading])
+
+  // Fetch agent's online status
+  useEffect(() => {
+    const fetchAgentStatus = async () => {
+      if (!user) return
+      
+      try {
+        const { data, error } = await supabase
+          .from('agents')
+          .select('is_online')
+          .eq('user_id', user.id)
+          .single()
+        
+        if (error) {
+          console.error('Error fetching agent status:', error)
+          return
+        }
+        
+        setIsOnline(data?.is_online || false)
+        setOnlineStatusLoading(false)
+      } catch (error) {
+        console.error('Error in fetchAgentStatus:', error)
+        setOnlineStatusLoading(false)
+      }
+    }
+
+    if (user && !profileLoading) {
+      fetchAgentStatus()
+    }
+  }, [user, profileLoading])
+
+  // Subscribe to agent status changes
+  useEffect(() => {
+    if (!user) return
+
+    const channel = supabase.channel(`agent_status:${user.id}`)
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'agents',
+          filter: `user_id=eq.${user.id}`
+        }, 
+        (payload) => {
+          setIsOnline(payload.new.is_online || false)
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [user])
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -123,6 +179,47 @@ export default function AgentDashboard() {
     })
   }
 
+  const handleOnlineStatusToggle = async (checked: boolean) => {
+    if (!user) return
+    
+    setOnlineStatusLoading(true)
+    
+    try {
+      const { error } = await supabase
+        .from('agents')
+        .update({ is_online: checked })
+        .eq('user_id', user.id)
+      
+      if (error) {
+        console.error('Error updating online status:', error)
+        toast({
+          title: "Error",
+          description: "Failed to update online status",
+          variant: "destructive",
+        })
+        // Revert the toggle if update failed
+        setIsOnline(!checked)
+      } else {
+        setIsOnline(checked)
+        toast({
+          title: checked ? "Online" : "Offline",
+          description: `You are now ${checked ? 'online' : 'offline'}`,
+        })
+      }
+    } catch (error) {
+      console.error('Error in handleOnlineStatusToggle:', error)
+      toast({
+        title: "Error",
+        description: "Failed to update online status",
+        variant: "destructive",
+      })
+      // Revert the toggle if update failed
+      setIsOnline(!checked)
+    } finally {
+      setOnlineStatusLoading(false)
+    }
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/");
@@ -155,9 +252,33 @@ export default function AgentDashboard() {
             <h1 className="text-3xl font-bold">Agent Dashboard</h1>
             <p className="text-muted-foreground">Manage your assigned repair jobs</p>
           </div>
-          <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
-            <LogOut className="h-4 w-4 mr-1" /> Logout
-          </Button>
+          <div className="flex items-center gap-4">
+            {/* Online/Offline Toggle */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                {isOnline ? (
+                  <Wifi className="h-4 w-4 text-green-600" />
+                ) : (
+                  <WifiOff className="h-4 w-4 text-gray-500" />
+                )}
+                <span className="text-sm font-medium">
+                  {isOnline ? 'Online' : 'Offline'}
+                </span>
+              </div>
+              <Switch
+                checked={isOnline}
+                onCheckedChange={handleOnlineStatusToggle}
+                disabled={onlineStatusLoading}
+                className="data-[state=checked]:bg-green-600"
+              />
+              {onlineStatusLoading && (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              )}
+            </div>
+            <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
+              <LogOut className="h-4 w-4 mr-1" /> Logout
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}

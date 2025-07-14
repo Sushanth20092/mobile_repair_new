@@ -39,7 +39,7 @@ export default function BookRepairPage() {
   const [currentStep, setCurrentStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Form data
+  // Form data - reset to initial state
   const [formData, setFormData] = useState({
     category: "",
     brand: "",
@@ -62,6 +62,37 @@ export default function BookRepairPage() {
     newModel: "", // Added for new model input
     customModel: "", // Added for custom model input
   })
+
+  // Reset form state on component mount
+  useEffect(() => {
+    console.log("🔄 BookRepairPage: Component mounted, resetting form state");
+    setCurrentStep(1);
+    setIsLoading(false);
+    setFormData({
+      category: "",
+      brand: "",
+      model: "",
+      faults: [] as string[],
+      customFault: "",
+      images: [] as string[],
+      serviceType: "",
+      selectedAgent: "",
+      address: "",
+      pincode: "",
+      city_id: "",
+      collectionDate: undefined,
+      collectionTime: "",
+      deliveryDate: undefined,
+      deliveryTime: "",
+      duration: "",
+      promoCode: "",
+      paymentMethod: "",
+      newModel: "",
+      customModel: "",
+    });
+    setSelectedFaults([]);
+    setDeviceId("");
+  }, []);
 
   const steps = [
     { id: 1, title: "Device Details", description: "Select your device and issues" },
@@ -89,12 +120,28 @@ export default function BookRepairPage() {
   const [deviceId, setDeviceId] = useState<string>("");
   // 1. Add a new state for user profile (to get city_id)
   const [userProfile, setUserProfile] = useState<any>(null);
+  // Add state for service types
+  const [serviceTypes, setServiceTypes] = useState<any[]>([]);
+  const [serviceTypesLoading, setServiceTypesLoading] = useState(true);
+  // Add state for duration types
+  const [durationTypes, setDurationTypes] = useState<any[]>([]);
+  const [durationTypesLoading, setDurationTypesLoading] = useState(true);
 
   useEffect(() => {
     // Fetch cities
     supabase.from('cities').select('*').then(({ data, error }) => {
       setCities(data || [])
       setCitiesLoading(false)
+    })
+    // Fetch service types
+    supabase.from('service_types').select('*').eq('is_active', true).then(({ data, error }) => {
+      setServiceTypes(data || [])
+      setServiceTypesLoading(false)
+    })
+    // Fetch duration types
+    supabase.from('duration_types').select('*').eq('is_active', true).order('sort_order', { ascending: true }).then(({ data, error }) => {
+      setDurationTypes(data || [])
+      setDurationTypesLoading(false)
     })
     // Fetch user profile (to get city_id)
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -276,50 +323,121 @@ export default function BookRepairPage() {
 
   // Update handleSubmit to save selectedFaults in the booking
   const handleSubmit = async () => {
+    console.log("🚀 Submitting booking:", { formData, selectedFaults, deviceId });
     setIsLoading(true);
     try {
+      // Get the selected service type
+      const selectedServiceType = serviceTypes.find(st => st.name === formData.serviceType);
+      console.log("📋 Selected service type:", selectedServiceType);
+      
+      // Get the selected duration type
+      const selectedDurationType = durationTypes.find(dt => dt.name === formData.duration);
+      console.log("📋 Selected duration type:", selectedDurationType);
+      
+      // Prepare booking data with proper field mappings
+      const bookingData = {
+        ...formData,
+        service_type_id: selectedServiceType?.id || null,
+        duration_type_id: selectedDurationType?.id || null,
+        agent_id: formData.selectedAgent || null,
+        images: formData.images,
+        device_id: deviceId,
+        faults: selectedFaults.map(f => ({ id: f.id, name: f.name, price: f.price })),
+        // Map Collection & Delivery specific fields
+        address_street: formData.address || null,
+        address_pincode: formData.pincode || null,
+        collection_date: formData.collectionDate ? formData.collectionDate.toISOString().split('T')[0] : null,
+        collection_time: formData.collectionTime || null,
+        delivery_date: formData.deliveryDate ? formData.deliveryDate.toISOString().split('T')[0] : null,
+        delivery_time: formData.deliveryTime || null,
+      };
+      
+      console.log("📤 Booking data to insert:", bookingData);
+      
       // Insert booking into Supabase
-      const { data, error } = await supabase.from('bookings').insert([
-        {
-          ...formData,
-          agent_id: formData.selectedAgent || null,
-          images: formData.images,
-          device_id: deviceId,
-          faults: selectedFaults.map(f => ({ id: f.id, name: f.name, price: f.price })),
-        }
-      ]);
-      if (error) throw error;
+      const { data, error } = await supabase.from('bookings').insert([bookingData]);
+      if (error) {
+        console.error("❌ Booking insert error:", error);
+        throw error;
+      }
       const bookingId = (data as any)?.[0]?.id;
+      console.log("✅ Booking created successfully:", bookingId);
       toast({ title: "Success", description: `Repair booked successfully! Booking ID: ${bookingId}` });
       router.push(`/customer/book-repair/confirmation?bookingId=${bookingId}`);
     } catch (error: any) {
+      console.error("❌ Booking submission failed:", error);
       toast({ title: "Error", description: error.message || "Failed to book repair. Please try again.", variant: "destructive" });
     } finally {
       setIsLoading(false);
+      console.log("🏁 Booking submission completed");
     }
   };
 
   const nextStep = () => {
-    if (currentStep < steps.length) {
-      setCurrentStep(currentStep + 1)
+    const canProceedResult = canProceed();
+    console.log("➡️ Next step clicked:", { currentStep, canProceed: canProceedResult });
+    if (currentStep < steps.length && canProceedResult === true) {
+      setCurrentStep(currentStep + 1);
+      console.log("✅ Moved to step:", currentStep + 1);
+    } else {
+      console.log("❌ Cannot proceed to next step");
     }
   }
 
   const prevStep = () => {
+    console.log("⬅️ Previous step clicked:", { currentStep });
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1)
+      setCurrentStep(currentStep - 1);
+      console.log("✅ Moved to step:", currentStep - 1);
     }
   }
 
+  // Update canProceed function to use correct service type name
   const canProceed = () => {
+    console.log("🔍 canProceed check:", {
+      currentStep,
+      formData: {
+        category: formData.category,
+        brand: formData.brand,
+        model: formData.model,
+        serviceType: formData.serviceType,
+        selectedAgent: formData.selectedAgent,
+        address: formData.address,
+        pincode: formData.pincode,
+        city_id: formData.city_id,
+        collectionDate: formData.collectionDate,
+        collectionTime: formData.collectionTime,
+        deliveryDate: formData.deliveryDate,
+        deliveryTime: formData.deliveryTime,
+        duration: formData.duration,
+        paymentMethod: formData.paymentMethod
+      },
+      selectedFaultsLength: selectedFaults.length
+    });
+
+    let isValid = false;
+
     switch (currentStep) {
       case 1:
-        return formData.category && formData.brand && formData.model && selectedFaults.length > 0
+        isValid = Boolean(formData.category && formData.brand && formData.model && selectedFaults.length > 0);
+        console.log("📋 Step 1 validation:", { 
+          category: Boolean(formData.category), 
+          brand: Boolean(formData.brand), 
+          model: Boolean(formData.model), 
+          faultsSelected: selectedFaults.length > 0,
+          isValid: isValid 
+        });
+        return isValid;
       case 2:
-        if (formData.serviceType === "local") {
-          return formData.selectedAgent
-        } else if (formData.serviceType === "collection") {
-          return (
+        if (formData.serviceType === "local_dropoff") {
+          isValid = Boolean(formData.selectedAgent);
+          console.log("📋 Step 2 (local_dropoff) validation:", { 
+            selectedAgent: Boolean(formData.selectedAgent),
+            isValid: isValid 
+          });
+          return isValid;
+        } else if (formData.serviceType === "collection_delivery") {
+          isValid = Boolean(
             formData.selectedAgent &&
             formData.address &&
             formData.pincode &&
@@ -327,17 +445,47 @@ export default function BookRepairPage() {
             formData.collectionTime &&
             formData.deliveryDate !== undefined &&
             formData.deliveryTime
-          )
+          );
+          console.log("📋 Step 2 (collection_delivery) validation:", { 
+            selectedAgent: Boolean(formData.selectedAgent),
+            address: Boolean(formData.address),
+            pincode: Boolean(formData.pincode),
+            collectionDate: Boolean(formData.collectionDate),
+            collectionTime: Boolean(formData.collectionTime),
+            deliveryDate: Boolean(formData.deliveryDate),
+            deliveryTime: Boolean(formData.deliveryTime),
+            isValid: isValid 
+          });
+          return isValid;
         } else if (formData.serviceType === "postal") {
-          return formData.address && formData.pincode && formData.city_id
+          isValid = Boolean(formData.address && formData.pincode && formData.city_id);
+          console.log("📋 Step 2 (postal) validation:", { 
+            address: Boolean(formData.address),
+            pincode: Boolean(formData.pincode),
+            city_id: Boolean(formData.city_id),
+            isValid: isValid 
+          });
+          return isValid;
         }
-        return false
+        console.log("�� Step 2 validation: No service type selected");
+        return false;
       case 3:
-        return formData.duration
+        isValid = Boolean(formData.duration);
+        console.log("📋 Step 3 validation:", { 
+          duration: Boolean(formData.duration),
+          isValid: isValid 
+        });
+        return isValid;
       case 4:
-        return formData.paymentMethod
+        isValid = Boolean(formData.paymentMethod);
+        console.log("📋 Step 4 validation:", { 
+          paymentMethod: Boolean(formData.paymentMethod),
+          isValid: isValid 
+        });
+        return isValid;
       default:
-        return false
+        console.log("📋 Unknown step validation");
+        return false;
     }
   }
 
@@ -571,292 +719,294 @@ export default function BookRepairPage() {
                     onValueChange={(value) => setFormData({ ...formData, serviceType: value })}
                   >
                     <div className="space-y-4">
-                      {/* Local Dropoff */}
-                      <div
-                        className={`border rounded-lg p-4 ${formData.serviceType === "local" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="local" id="local" />
-                          <Label htmlFor="local" className="font-medium">
-                            Local Dropoff
-                          </Label>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Drop off your device at a nearby repair center
-                        </p>
-                        {/* Agent List or Fallback Message (directly below Local Dropoff) */}
-                        {formData.serviceType === "local" && (
-                          <div className="mt-4 space-y-4">
-                            <Label className="text-base font-medium">Select Repair Center</Label>
-                            <div className="space-y-3">
-                              {agentsLoading ? (
-                                <div>Loading agents...</div>
-                              ) : agents.length === 0 ? (
-                                <div className="text-muted-foreground">No agents are currently available for local dropoff in your area.</div>
-                              ) : (
-                                agents.map((agent) => (
-                                  <div
-                                    key={agent.id}
-                                    className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                      formData.selectedAgent === agent.id
-                                        ? "border-primary bg-primary/5"
-                                        : "border-muted hover:border-primary/50"
-                                    }`}
-                                    onClick={() => setFormData({ ...formData, selectedAgent: agent.id })}
-                                  >
-                                    <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
-                                      <div>
-                                        <h3 className="font-medium text-lg">{agent.name}</h3>
-                                        <div className="text-sm text-muted-foreground mb-1">
-                                          {agent.shop_name} <span className="mx-2">|</span> {agent.shop_address_street}, {agent.shop_address_pincode}
-                                        </div>
-                                        <div className="flex flex-wrap gap-2 mb-1">
-                                          {Array.isArray(agent.specializations) && agent.specializations.length > 0 && (agent.specializations as string[]).map((spec: string, idx: number) => (
-                                            <span key={idx} className="inline-block bg-muted px-2 py-0.5 rounded text-xs">{spec}</span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                      <div className="flex flex-col items-end gap-1 min-w-[120px]">
-                                        <div className="flex items-center gap-1 text-sm">
-                                          <span className="text-yellow-500">★</span>
-                                          <span className="font-semibold">{agent.rating_average ? agent.rating_average.toFixed(1) : 'N/A'}</span>
-                                          <span className="text-muted-foreground">({agent.rating_count || 0} reviews)</span>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground">{agent.completed_jobs || 0} jobs completed</div>
-                                        {agent.last_seen && (
-                                          <div className="text-xs text-muted-foreground">Last seen: {new Date(agent.last_seen).toLocaleString()}</div>
+                      {serviceTypesLoading ? (
+                        <div>Loading service types...</div>
+                      ) : serviceTypes.length === 0 ? (
+                        <div>No service types available.</div>
+                      ) : (
+                        // Sort service types in the correct order
+                        serviceTypes
+                          .sort((a, b) => {
+                            const order = { local_dropoff: 1, collection_delivery: 2, postal: 3 };
+                            return (order[a.name as keyof typeof order] || 999) - (order[b.name as keyof typeof order] || 999);
+                          })
+                          .map((serviceType) => (
+                            <div key={serviceType.id}>
+                              <div
+                                className={`border rounded-lg p-4 ${formData.serviceType === serviceType.name ? "border-primary bg-primary/5" : "border-muted"}`}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <RadioGroupItem value={serviceType.name} id={serviceType.name} />
+                                  <Label htmlFor={serviceType.name} className="font-medium">
+                                    {serviceType.label}
+                                  </Label>
+                                </div>
+                                <p className="text-sm text-muted-foreground mt-2">
+                                  {serviceType.description}
+                                </p>
+                              </div>
+                              
+                              {/* Conditional UI blocks for each service type */}
+                              {formData.serviceType === serviceType.name && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: "auto" }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  transition={{ duration: 0.3, ease: "easeInOut" }}
+                                  className="mt-4"
+                                >
+                                  {/* Local Dropoff - Agent Selection */}
+                                  {serviceType.name === "local_dropoff" && (
+                                    <div className="space-y-4">
+                                      <Label className="text-base font-medium">Select Repair Center</Label>
+                                      <div className="space-y-3">
+                                        {agentsLoading ? (
+                                          <div>Loading agents...</div>
+                                        ) : agents.length === 0 ? (
+                                          <div className="text-muted-foreground">No agents are currently available for local dropoff in your area.</div>
+                                        ) : (
+                                          agents.map((agent) => (
+                                            <div
+                                              key={agent.id}
+                                              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                                formData.selectedAgent === agent.id
+                                                  ? "border-primary bg-primary/5"
+                                                  : "border-muted hover:border-primary/50"
+                                              }`}
+                                              onClick={() => setFormData({ ...formData, selectedAgent: agent.id })}
+                                            >
+                                              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                                                <div>
+                                                  <h3 className="font-medium text-lg">{agent.name}</h3>
+                                                  <div className="text-sm text-muted-foreground mb-1">
+                                                    {agent.shop_name} <span className="mx-2">|</span> {agent.shop_address_street}, {agent.shop_address_pincode}
+                                                  </div>
+                                                  <div className="flex flex-wrap gap-2 mb-1">
+                                                    {Array.isArray(agent.specializations) && agent.specializations.length > 0 && (agent.specializations as string[]).map((spec: string, idx: number) => (
+                                                      <span key={idx} className="inline-block bg-muted px-2 py-0.5 rounded text-xs">{spec}</span>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1 min-w-[120px]">
+                                                  <div className="flex items-center gap-1 text-sm">
+                                                    <span className="text-yellow-500">★</span>
+                                                    <span className="font-semibold">{agent.rating_average ? agent.rating_average.toFixed(1) : 'N/A'}</span>
+                                                    <span className="text-muted-foreground">({agent.rating_count || 0} reviews)</span>
+                                                  </div>
+                                                  <div className="text-xs text-muted-foreground">{agent.completed_jobs || 0} jobs completed</div>
+                                                  {agent.last_seen && (
+                                                    <div className="text-xs text-muted-foreground">Last seen: {new Date(agent.last_seen).toLocaleString()}</div>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))
                                         )}
                                       </div>
                                     </div>
-                                  </div>
-                                ))
+                                  )}
+
+                                  {/* Collection & Delivery - Address Form */}
+                                  {serviceType.name === "collection_delivery" && (
+                                    <div className="space-y-4">
+                                      <Label className="text-base font-medium">Collection & Delivery Address</Label>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label htmlFor="address">Address</Label>
+                                          <Textarea
+                                            id="address"
+                                            placeholder="Enter your full address"
+                                            value={formData.address}
+                                            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                          />
+                                        </div>
+                                        <div className="space-y-4">
+                                          <div className="space-y-2">
+                                            <Label htmlFor="pincode">Pincode</Label>
+                                            <Input
+                                              id="pincode"
+                                              placeholder="Enter pincode"
+                                              value={formData.pincode}
+                                              onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                                            />
+                                          </div>
+                                          <div className="space-y-2">
+                                            <Label htmlFor="city">City</Label>
+                                            <Select
+                                              value={formData.city_id}
+                                              onValueChange={(value) => setFormData({ ...formData, city_id: value })}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Select city" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {citiesLoading ? (
+                                                  <div>Loading cities...</div>
+                                                ) : cities.length === 0 ? (
+                                                  <div>No cities available.</div>
+                                                ) : (
+                                                  cities.map((city) => (
+                                                    <SelectItem key={city.id} value={city.id}>
+                                                      {city.name}
+                                                    </SelectItem>
+                                                  ))
+                                                )}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      {/* Collection Date & Time */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label>Collection Date</Label>
+                                          <Popover>
+                                            <PopoverTrigger asChild>
+                                              <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {formData.collectionDate ? format(formData.collectionDate, "PPP") : "Pick a date"}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                              <Calendar
+                                                mode="single"
+                                                selected={formData.collectionDate}
+                                                onSelect={(date) => setFormData({ ...formData, collectionDate: date })}
+                                                disabled={(date) => date < getMinDate() || date > getMaxDate()}
+                                                initialFocus
+                                              />
+                                            </PopoverContent>
+                                          </Popover>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label htmlFor="collectionTime">Collection Time</Label>
+                                          <Select
+                                            value={formData.collectionTime}
+                                            onValueChange={(value) => setFormData({ ...formData, collectionTime: value })}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select time" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {getAvailableTimes().map((time) => (
+                                                <SelectItem key={time} value={time}>
+                                                  {time}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                      {/* Delivery Date & Time */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label>Delivery Date</Label>
+                                          <Popover>
+                                            <PopoverTrigger asChild>
+                                              <Button variant="outline" className="w-full justify-start text-left font-normal">
+                                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                                {formData.deliveryDate ? format(formData.deliveryDate, "PPP") : "Pick a date"}
+                                              </Button>
+                                            </PopoverTrigger>
+                                            <PopoverContent className="w-auto p-0">
+                                              <Calendar
+                                                mode="single"
+                                                selected={formData.deliveryDate}
+                                                onSelect={(date) => setFormData({ ...formData, deliveryDate: date })}
+                                                disabled={(date) => date < getMinDate() || date > getMaxDate()}
+                                                initialFocus
+                                              />
+                                            </PopoverContent>
+                                          </Popover>
+                                        </div>
+                                        <div className="space-y-2">
+                                          <Label htmlFor="deliveryTime">Delivery Time</Label>
+                                          <Select
+                                            value={formData.deliveryTime}
+                                            onValueChange={(value) => setFormData({ ...formData, deliveryTime: value })}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue placeholder="Select time" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {getAvailableTimes().map((time) => (
+                                                <SelectItem key={time} value={time}>
+                                                  {time}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Postal Service - Address Form */}
+                                  {serviceType.name === "postal" && (
+                                    <div className="space-y-4">
+                                      <Label className="text-base font-medium">Postal Address</Label>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label htmlFor="postalAddress">Address</Label>
+                                          <Textarea
+                                            id="postalAddress"
+                                            placeholder="Enter your full address"
+                                            value={formData.address}
+                                            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                          />
+                                        </div>
+                                        <div className="space-y-4">
+                                          <div className="space-y-2">
+                                            <Label htmlFor="postalPincode">Pincode</Label>
+                                            <Input
+                                              id="postalPincode"
+                                              placeholder="Enter pincode"
+                                              value={formData.pincode}
+                                              onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                                            />
+                                          </div>
+                                          <div className="space-y-2">
+                                            <Label htmlFor="postalCity">City</Label>
+                                            <Select
+                                              value={formData.city_id}
+                                              onValueChange={(value) => setFormData({ ...formData, city_id: value })}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Select city" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {citiesLoading ? (
+                                                  <div>Loading cities...</div>
+                                                ) : cities.length === 0 ? (
+                                                  <div>No cities available.</div>
+                                                ) : (
+                                                  cities.map((city) => (
+                                                    <SelectItem key={city.id} value={city.id}>
+                                                      {city.name}
+                                                    </SelectItem>
+                                                  ))
+                                                )}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
+                                        <p className="text-sm text-blue-800 dark:text-blue-200">
+                                          <strong>Note:</strong> For postal service, our admin will assign the best available agent in
+                                          your city. You'll receive agent details once assigned.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </motion.div>
                               )}
                             </div>
-                          </div>
-                        )}
-                      </div>
-                      {/* Collection & Delivery (unchanged) */}
-                      <div
-                        className={`border rounded-lg p-4 ${formData.serviceType === "collection" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="collection" id="collection" />
-                          <Label htmlFor="collection" className="font-medium">
-                            Collection & Delivery
-                          </Label>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          We'll collect from your address and deliver back
-                        </p>
-                      </div>
-                      {/* Postal Service (unchanged) */}
-                      <div
-                        className={`border rounded-lg p-4 ${formData.serviceType === "postal" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="postal" id="postal" />
-                          <Label htmlFor="postal" className="font-medium">
-                            Postal Service
-                          </Label>
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Send your device by post (Admin will assign agent)
-                        </p>
-                      </div>
+                          ))
+                      )}
                     </div>
                   </RadioGroup>
                 </div>
-                {/* Restore the original address/date/city input forms for 'collection' and 'postal' below the RadioGroup, only when those service types are selected */}
-                {formData.serviceType === "collection" && (
-                  <div className="space-y-4">
-                    <Label className="text-base font-medium">Collection & Delivery Address</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="address">Address</Label>
-                        <Textarea
-                          id="address"
-                          placeholder="Enter your full address"
-                          value={formData.address}
-                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="pincode">Pincode</Label>
-                          <Input
-                            id="pincode"
-                            placeholder="Enter pincode"
-                            value={formData.pincode}
-                            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="city">City</Label>
-                          <Select
-                            value={formData.city_id}
-                            onValueChange={(value) => setFormData({ ...formData, city_id: value })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select city" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {citiesLoading ? (
-                                <div>Loading cities...</div>
-                              ) : cities.length === 0 ? (
-                                <div>No cities available.</div>
-                              ) : (
-                                cities.map((city) => (
-                                  <SelectItem key={city.id} value={city.id}>
-                                    {city.name}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                    {/* Collection Date & Time */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Collection Date</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-full justify-start text-left font-normal">
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {formData.collectionDate ? format(formData.collectionDate, "PPP") : "Pick a date"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={formData.collectionDate}
-                              onSelect={(date) => setFormData({ ...formData, collectionDate: date })}
-                              disabled={(date) => date < getMinDate() || date > getMaxDate()}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="collectionTime">Collection Time</Label>
-                        <Select
-                          value={formData.collectionTime}
-                          onValueChange={(value) => setFormData({ ...formData, collectionTime: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select time" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {getAvailableTimes().map((time) => (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    {/* Delivery Date & Time */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Delivery Date</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-full justify-start text-left font-normal">
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {formData.deliveryDate ? format(formData.deliveryDate, "PPP") : "Pick a date"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={formData.deliveryDate}
-                              onSelect={(date) => setFormData({ ...formData, deliveryDate: date })}
-                              disabled={(date) => date < getMinDate() || date > getMaxDate()}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="deliveryTime">Delivery Time</Label>
-                        <Select
-                          value={formData.deliveryTime}
-                          onValueChange={(value) => setFormData({ ...formData, deliveryTime: value })}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select time" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {getAvailableTimes().map((time) => (
-                              <SelectItem key={time} value={time}>
-                                {time}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {formData.serviceType === "postal" && (
-                  <div className="space-y-4">
-                    <Label className="text-base font-medium">Postal Address</Label>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="postalAddress">Address</Label>
-                        <Textarea
-                          id="postalAddress"
-                          placeholder="Enter your full address"
-                          value={formData.address}
-                          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="postalPincode">Pincode</Label>
-                          <Input
-                            id="postalPincode"
-                            placeholder="Enter pincode"
-                            value={formData.pincode}
-                            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="postalCity">City</Label>
-                          <Select
-                            value={formData.city_id}
-                            onValueChange={(value) => setFormData({ ...formData, city_id: value })}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select city" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {citiesLoading ? (
-                                <div>Loading cities...</div>
-                              ) : cities.length === 0 ? (
-                                <div>No cities available.</div>
-                              ) : (
-                                cities.map((city) => (
-                                  <SelectItem key={city.id} value={city.id}>
-                                    {city.name}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
-                      <p className="text-sm text-blue-800 dark:text-blue-200">
-                        <strong>Note:</strong> For postal service, our admin will assign the best available agent in
-                        your city. You'll receive agent details once assigned.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </motion.div>
             )}
 
@@ -871,56 +1021,33 @@ export default function BookRepairPage() {
                     onValueChange={(value) => setFormData({ ...formData, duration: value })}
                   >
                     <div className="space-y-4">
-                      <div
-                        className={`border rounded-lg p-4 ${formData.duration === "express" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="express" id="express" />
-                            <div>
-                              <Label htmlFor="express" className="font-medium">
-                                Express (Same Day)
-                              </Label>
-                              <p className="text-sm text-muted-foreground">Get your device back within 4-6 hours</p>
+                      {durationTypesLoading ? (
+                        <div>Loading duration options...</div>
+                      ) : durationTypes.length === 0 ? (
+                        <div>No duration options available.</div>
+                      ) : (
+                        durationTypes.map((durationType) => (
+                          <div
+                            key={durationType.id}
+                            className={`border rounded-lg p-4 ${formData.duration === durationType.name ? "border-primary bg-primary/5" : "border-muted"}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value={durationType.name} id={durationType.name} />
+                                <div>
+                                  <Label htmlFor={durationType.name} className="font-medium">
+                                    {durationType.label}
+                                  </Label>
+                                  <p className="text-sm text-muted-foreground">{durationType.description}</p>
+                                </div>
+                              </div>
+                              <Badge variant="secondary">
+                                {durationType.extra_charge > 0 ? `+₹${durationType.extra_charge}` : 'Base Price'}
+                              </Badge>
                             </div>
                           </div>
-                          <Badge variant="secondary">+₹1000</Badge>
-                        </div>
-                      </div>
-
-                      <div
-                        className={`border rounded-lg p-4 ${formData.duration === "standard" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="standard" id="standard" />
-                            <div>
-                              <Label htmlFor="standard" className="font-medium">
-                                Standard (1-2 Days)
-                              </Label>
-                              <p className="text-sm text-muted-foreground">Most popular option with quality service</p>
-                            </div>
-                          </div>
-                          <Badge variant="secondary">+₹500</Badge>
-                        </div>
-                      </div>
-
-                      <div
-                        className={`border rounded-lg p-4 ${formData.duration === "economy" ? "border-primary bg-primary/5" : "border-muted"}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="economy" id="economy" />
-                            <div>
-                              <Label htmlFor="economy" className="font-medium">
-                                Economy (3-5 Days)
-                              </Label>
-                              <p className="text-sm text-muted-foreground">Budget-friendly option</p>
-                            </div>
-                          </div>
-                          <Badge variant="secondary">Base Price</Badge>
-                        </div>
-                      </div>
+                        ))
+                      )}
                     </div>
                   </RadioGroup>
                 </div>
@@ -1056,6 +1183,13 @@ export default function BookRepairPage() {
           </CardContent>
         </Card>
 
+        {/* Debug info */}
+        {(() => {
+          const canProceedResult = canProceed();
+          console.log("🎯 Navigation buttons render - canProceed:", canProceedResult, "currentStep:", currentStep);
+          return null;
+        })()}
+
         {/* Navigation Buttons */}
         <div className="flex justify-between">
           <Button variant="outline" onClick={prevStep} disabled={currentStep === 1}>
@@ -1064,7 +1198,13 @@ export default function BookRepairPage() {
           </Button>
 
           {currentStep < steps.length ? (
-            <Button onClick={nextStep} disabled={!canProceed()}>
+            <Button 
+              onClick={() => {
+                console.log("🔘 Next button clicked - canProceed result:", canProceed());
+                nextStep();
+              }} 
+              disabled={!canProceed()}
+            >
               Next
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
