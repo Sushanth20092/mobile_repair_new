@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import { supabase } from "@/lib/api"
+import { formatGBP } from "@/lib/utils"
 
 
 type Category = { id: string; name: string };
@@ -636,8 +637,8 @@ export default function AdminDashboard() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">₹{loading ? "..." : ((stats?.totalRevenue ?? 0) / 100000).toFixed(1)}L</div>
-              <p className="text-xs text-muted-foreground">₹{loading ? "..." : (stats?.totalRevenue ?? 0).toLocaleString()} total</p>
+              <div className="text-2xl font-bold">{loading ? "..." : formatGBP(stats?.totalRevenue ?? 0)}</div>
+              <p className="text-xs text-muted-foreground">£{loading ? "..." : formatGBP(stats?.totalRevenue ?? 0)} total</p>
             </CardContent>
           </Card>
         </div>
@@ -936,7 +937,7 @@ export default function AdminDashboard() {
 
                         <div className="flex flex-col gap-2 min-w-[200px]">
                           <div className="text-right mb-2">
-                            <p className="font-semibold">₹{booking.amount.toLocaleString()}</p>
+                            <p className="font-semibold">{formatGBP(booking.amount)}</p>
                             <p className="text-xs text-muted-foreground">Booking ID: {booking.id}</p>
                           </div>
                           <div className="flex flex-col gap-2">
@@ -1028,11 +1029,11 @@ export default function AdminDashboard() {
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
                       <span>This Month</span>
-                      <span className="font-semibold">₹8.5L</span>
+                      <span className="font-semibold">{formatGBP(850000)}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Last Month</span>
-                      <span className="font-semibold">₹7.2L</span>
+                      <span className="font-semibold">{formatGBP(720000)}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Growth</span>
@@ -1139,7 +1140,7 @@ export default function AdminDashboard() {
                               <tr key={fault.id} className={fault.is_active ? "" : "opacity-50"}>
                                 <td className="px-2 py-1">{fault.name}</td>
                                 <td className="px-2 py-1">{fault.description}</td>
-                                <td className="px-2 py-1 text-right">₹{fault.price}</td>
+                                <td className="px-2 py-1 text-right">{formatGBP(fault.price)}</td>
                                 <td className="px-2 py-1 text-center">{fault.is_active ? "Yes" : "No"}</td>
                                 <td className="px-2 py-1 text-center flex gap-2 justify-center">
                                   <Button size="icon" variant="ghost" onClick={() => {
@@ -1239,7 +1240,7 @@ function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: a
             <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Online</th>
             <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Rating</th>
             <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Completed Jobs</th>
-            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Earnings (₹)</th>
+            <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Earnings (£)</th>
             <th className="px-4 py-2 text-center text-xs font-medium text-muted-foreground uppercase">Actions</th>
           </tr>
         </thead>
@@ -1255,7 +1256,7 @@ function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: a
                 <td className="px-4 py-2 text-center">{agent.is_online ? '✅' : '❌'}</td>
                 <td className="px-4 py-2 text-center">{agent.rating_average?.toFixed(1) ?? '0.0'} <span className="text-xs text-muted-foreground">({agent.rating_count ?? 0})</span></td>
                 <td className="px-4 py-2 text-center">{agent.completed_jobs ?? 0}</td>
-                <td className="px-4 py-2 text-center">{agent.earnings_total?.toLocaleString() ?? '0'}</td>
+                <td className="px-4 py-2 text-center">{formatGBP(agent.earnings_total ?? 0)}</td>
                 <td className="px-4 py-2 text-center">
                   <Button size="sm" variant="outline" onClick={() => setExpandedAgentId(expandedAgentId === agent.id ? null : agent.id)}>
                     <Eye className="h-3 w-3 mr-1" />
@@ -1292,9 +1293,9 @@ function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: a
                           </div>
                           <div>
                             <h4 className="font-semibold mb-1">Earnings Paid</h4>
-                            <p className="text-sm text-muted-foreground mb-2">₹{agent.earnings_paid?.toLocaleString() ?? '0'}</p>
+                            <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_paid ?? 0)}</p>
                             <h4 className="font-semibold mb-1">Earnings Pending</h4>
-                            <p className="text-sm text-muted-foreground mb-2">₹{agent.earnings_pending?.toLocaleString() ?? '0'}</p>
+                            <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_pending ?? 0)}</p>
                             <h4 className="font-semibold mb-1">Created At</h4>
                             <p className="text-sm text-muted-foreground mb-2">{agent.created_at ? new Date(agent.created_at).toLocaleString() : 'N/A'}</p>
                             <h4 className="font-semibold mb-1">Updated At</h4>

@@ -13,6 +13,7 @@ import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { supabase } from "@/lib/api"
+import { formatGBP } from "@/lib/utils"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -213,7 +214,7 @@ export default function BookingsPage() {
 
                           <div className="flex flex-col gap-3 min-w-[200px]">
                             <div className="text-right">
-                              <p className="text-2xl font-bold">₹{booking.amount.toLocaleString()}</p>
+                              <p className="text-2xl font-bold">{formatGBP(booking.amount)}</p>
                               <p className="text-sm text-muted-foreground">Booking ID: {booking.id}</p>
                             </div>
 
@@ -261,7 +262,7 @@ export default function BookingsPage() {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Amount:</span>
-                                    <span>₹{booking.amount.toLocaleString()}</span>
+                                    <span>{formatGBP(booking.amount)}</span>
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Status:</span>
@@ -329,7 +330,7 @@ export default function BookingsPage() {
 
                           <div className="flex flex-col gap-3 min-w-[200px]">
                             <div className="text-right">
-                              <p className="text-2xl font-bold">₹{booking.amount.toLocaleString()}</p>
+                              <p className="text-2xl font-bold">{formatGBP(booking.amount)}</p>
                               <p className="text-sm text-muted-foreground">Booking ID: {booking.id}</p>
                             </div>
 

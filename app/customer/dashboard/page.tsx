@@ -24,6 +24,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { useRouter } from "next/navigation"
 import { apiGet } from "@/lib/api"
 import { supabase } from "@/lib/api"
+import { formatGBP } from "@/lib/utils"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -136,11 +137,11 @@ export default function CustomerDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-              <span className="h-4 w-4 text-muted-foreground">₹</span>
+              <span className="h-4 w-4 text-muted-foreground">£</span>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                ₹{bookings.reduce((sum, booking) => sum + booking.amount, 0).toLocaleString()}
+                £{bookings.reduce((sum, booking) => sum + booking.amount, 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">All repairs</p>
             </CardContent>
@@ -213,7 +214,7 @@ export default function CustomerDashboard() {
 
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                             <div className="text-right mb-2 sm:mb-0">
-                              <p className="font-semibold">₹{booking.amount.toLocaleString()}</p>
+                              <p className="font-semibold">£{booking.amount.toLocaleString()}</p>
                               <p className="text-xs text-muted-foreground">Booking ID: {booking.id}</p>
                             </div>
                             <div className="flex gap-2">
@@ -275,7 +276,7 @@ export default function CustomerDashboard() {
 
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                             <div className="text-right mb-2 sm:mb-0">
-                              <p className="font-semibold">₹{booking.amount.toLocaleString()}</p>
+                              <p className="font-semibold">£{booking.amount.toLocaleString()}</p>
                               <p className="text-xs text-muted-foreground">Booking ID: {booking.id}</p>
                             </div>
                             <div className="flex gap-2">

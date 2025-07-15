@@ -22,6 +22,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { supabase } from "@/lib/api"
+import { formatGBP } from "@/lib/utils"
 
 type Category = { id: string; name: string };
 type Brand = { id: string; name: string; category_id: string };
@@ -636,7 +637,7 @@ export default function BookRepairPage() {
                             onCheckedChange={() => handleFaultToggle(fault)}
                           />
                           <Label htmlFor={fault.id} className="text-sm">
-                            {fault.name} <span className="ml-2 text-muted-foreground">₹{fault.price}</span>
+                            {fault.name} <span className="ml-2 text-muted-foreground">£{fault.price}</span>
                           </Label>
                         </div>
                       ))}
@@ -1042,7 +1043,7 @@ export default function BookRepairPage() {
                                 </div>
                               </div>
                               <Badge variant="secondary">
-                                {durationType.extra_charge > 0 ? `+₹${durationType.extra_charge}` : 'Base Price'}
+                                {durationType.extra_charge > 0 ? `+£${durationType.extra_charge}` : 'Base Price'}
                               </Badge>
                             </div>
                           </div>
@@ -1099,7 +1100,7 @@ export default function BookRepairPage() {
                     <div className="border-t pt-3">
                       <div className="flex justify-between text-lg font-semibold">
                         <span>Total Amount:</span>
-                        <span>₹{calculatePrice().toLocaleString()}</span>
+                        <span>£{formatGBP(calculatePrice())}</span>
                       </div>
                     </div>
                   </div>
@@ -1174,7 +1175,7 @@ export default function BookRepairPage() {
                     </div>
                     <div className="border-t pt-2 flex justify-between font-semibold">
                       <span>Total:</span>
-                      <span>₹{calculatePrice().toLocaleString()}</span>
+                      <span>£{formatGBP(calculatePrice())}</span>
                     </div>
                   </div>
                 </div>

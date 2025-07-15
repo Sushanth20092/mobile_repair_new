@@ -13,6 +13,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/api"
+import { formatGBP } from "@/lib/utils"
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -388,7 +389,7 @@ export default function AgentDashboard() {
                                 Booked: {new Date(job.bookedDate).toLocaleDateString()}
                               </p>
                               <p>
-                                <strong>Amount:</strong> ₹{job.amount.toLocaleString()}
+                                <strong>Amount:</strong> {formatGBP(job.amount)}
                               </p>
                             </div>
 
@@ -483,7 +484,7 @@ export default function AgentDashboard() {
 
                           <div className="flex flex-col gap-2 min-w-[200px]">
                             <div className="text-right mb-2">
-                              <p className="font-semibold">₹{job.amount.toLocaleString()}</p>
+                              <p className="font-semibold">{formatGBP(job.amount)}</p>
                               <p className="text-xs text-muted-foreground">Job ID: {job.id}</p>
                             </div>
                             <div className="flex flex-col gap-2">
@@ -548,7 +549,7 @@ export default function AgentDashboard() {
 
                           <div className="flex flex-col gap-2 min-w-[200px]">
                             <div className="text-right mb-2">
-                              <p className="font-semibold">₹{job.amount.toLocaleString()}</p>
+                              <p className="font-semibold">{formatGBP(job.amount)}</p>
                               <p className="text-xs text-muted-foreground">Job ID: {job.id}</p>
                             </div>
                             <div className="flex flex-col gap-2">
