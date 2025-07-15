@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Star,
   LogOut,
+  ArrowLeft,
 } from "lucide-react"
 import Link from "next/link"
 import { useAuth } from "@/contexts/auth-context"
@@ -79,6 +80,13 @@ export default function CustomerDashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
+        {/* Back to Homepage Button */}
+        <div className="mb-2">
+          <Button variant="ghost" onClick={() => router.push("/")}> 
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Homepage
+          </Button>
+        </div>
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>

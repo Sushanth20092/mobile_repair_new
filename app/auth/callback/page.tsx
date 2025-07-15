@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle, Loader2, Home } from "lucide-react";
+import { supabase } from "@/lib/api";
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -27,11 +28,43 @@ export default function AuthCallback() {
         // If no error, assume success
         setStatus('success');
         setMessage('Email confirmed successfully!');
-        
-        // Redirect to homepage after 3 seconds
+
+        // Try to get the current session
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !sessionData?.session?.user) {
+          // Not logged in or session missing, redirect to login after short delay
+          setTimeout(() => {
+            router.replace("/auth/login");
+          }, 2000);
+          return;
+        }
+        const userId = sessionData.session.user.id;
+        const userEmail = sessionData.session.user.email;
+        // Fetch the user's profile to get their role
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .single();
+        if (profileError || !profile?.role) {
+          setTimeout(() => {
+            router.replace("/auth/login");
+          }, 2000);
+          return;
+        }
+        // Redirect based on role
+        let redirectPath = "/";
+        if (profile.role === 'admin') {
+          redirectPath = "/admin/dashboard";
+        } else if (profile.role === 'agent') {
+          redirectPath = "/agent/dashboard";
+        } else if (profile.role === 'user' || profile.role === 'customer') {
+          // Support both 'user' and 'customer' as possible role names
+          redirectPath = "/customer/dashboard";
+        }
         setTimeout(() => {
-          router.replace("/");
-        }, 3000);
+          router.replace(redirectPath);
+        }, 2000);
       } catch (error) {
         setStatus('error');
         setMessage('Something went wrong. Please try again.');
@@ -64,7 +97,7 @@ export default function AuthCallback() {
           <p className="text-muted-foreground mb-4">{message}</p>
           {status === 'success' && (
             <p className="text-sm text-muted-foreground mb-4">
-              Redirecting to homepage...
+              Redirecting to your dashboard...
             </p>
           )}
           {status === 'error' && (

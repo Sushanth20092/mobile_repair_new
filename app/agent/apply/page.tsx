@@ -41,6 +41,8 @@ export default function AgentApplicationPage() {
   const [cities, setCities] = useState<{ id: string, name: string }[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
   const [applications, setApplications] = useState<any[]>([]);
+  const [idProofError, setIdProofError] = useState("");
+  const [shopImagesError, setShopImagesError] = useState("");
 
   const specializations = [
     "Mobile Phone Repair",
@@ -130,8 +132,38 @@ export default function AgentApplicationPage() {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    setIdProofError("");
+    setShopImagesError("");
     setIsLoading(true)
     try {
+      // Fetch authenticated user
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError || !userData?.user) {
+        toast({ title: "Error", description: "Could not verify your session. Please log in again.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+      // Compare emails
+      if (formData.email.trim().toLowerCase() !== userData.user.email?.trim().toLowerCase()) {
+        toast({ title: "Email mismatch", description: "Email mismatch. Please use the same email as your registered account.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+      // Validate id_proof and shop_images
+      let hasError = false;
+      if (!formData.idProof) {
+        setIdProofError("Please upload an ID proof document.");
+        hasError = true;
+      }
+      if (!formData.shopImages || formData.shopImages.length < 1) {
+        setShopImagesError("Please upload at least one shop image.");
+        hasError = true;
+      }
+      if (hasError) {
+        setIsLoading(false);
+        return;
+      }
+      // Proceed with insert if all validations pass
       const { data, error } = await supabase.from('agent_applications').insert([
         {
           user_id: user?.id,
@@ -147,7 +179,6 @@ export default function AgentApplicationPage() {
           id_proof: formData.idProof,
           shop_images: formData.shopImages,
           agree_to_terms: formData.agreeToTerms,
-          
           // status, reviewed_by, reviewed_at, created_at, updated_at are handled by default
         }
       ])
@@ -228,6 +259,9 @@ export default function AgentApplicationPage() {
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                         required
                       />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Make sure you enter the same email used to register your account.
+                      </p>
                     </div>
                   </div>
 
@@ -359,6 +393,7 @@ export default function AgentApplicationPage() {
                             </label>
                           </div>
                           {formData.idProof && <p className="text-sm text-green-600 mt-2">✓ {formData.idProof}</p>}
+                          {idProofError && <p className="text-sm text-destructive mt-2">{idProofError}</p>}
                         </div>
                       </div>
                     </div>
@@ -390,6 +425,7 @@ export default function AgentApplicationPage() {
                               ✓ {formData.shopImages.length} image(s) uploaded
                             </p>
                           )}
+                          {shopImagesError && <p className="text-sm text-destructive mt-2">{shopImagesError}</p>}
                         </div>
                       </div>
                     </div>
