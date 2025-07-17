@@ -14,6 +14,7 @@ permissions:
 jobs:
   sonarqube:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -21,7 +22,7 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
-          java-version: '17'  # Adjust this based on your project
+          java-version: '17'
           distribution: 'temurin'
 
       - name: SonarQube Scan
@@ -34,5 +35,4 @@ jobs:
           args: >
             -Dsonar.projectKey=mobile_repair
             -Dsonar.sources=.
-            -Dsonar.verbose=https://sonarcloud.io
-
+            -Dsonar.verbose=true
