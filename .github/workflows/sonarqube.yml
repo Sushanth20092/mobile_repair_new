@@ -34,5 +34,5 @@ jobs:
           args: >
             -Dsonar.projectKey=mobile_repair
             -Dsonar.sources=.
-            -Dsonar.verbose=true
+            -Dsonar.verbose=https://sonarcloud.io
 
