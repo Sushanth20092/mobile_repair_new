@@ -36,4 +36,5 @@ jobs:
             -Dsonar.projectKey=mobile_repair
             -Dsonar.sources=.
             -Dsonar.verbose=true
+            -X
 
