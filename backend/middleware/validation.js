@@ -20,7 +20,7 @@ const registerValidation = [
     .withMessage("Password must be at least 6 characters long")
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage("Password must contain at least one uppercase letter, one lowercase letter, and one number"),
-  body("city_id").isUUID().withMessage("city_id must be a valid UUID"),
+  // city_id is now optional, so we remove its validation
   handleValidationErrors,
 ]
 

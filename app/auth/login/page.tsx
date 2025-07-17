@@ -54,9 +54,6 @@ export default function LoginPage() {
     password: "",
     confirmPassword: "",
     role: "user",
-    address: "",
-    city_id: "",
-    pincode: "",
     agreeToTerms: false,
   })
 
@@ -93,9 +90,6 @@ export default function LoginPage() {
         if (value !== registerData.password) {
           error = "Passwords do not match"
         }
-        break
-      case "city_id":
-        if (!value) error = "City is required"
         break
       case "agreeToTerms":
         if (!value) error = "You must agree to the terms"
@@ -181,10 +175,8 @@ export default function LoginPage() {
     // Validate all fields before submission
     const validationErrors: Record<string, string> = {}
     Object.entries(registerData).forEach(([key, value]) => {
-      if (key !== 'address' && key !== 'pincode') { // These are optional fields
-        const error = validateField(key, value)
-        if (error) validationErrors[key] = error
-      }
+      const error = validateField(key, value)
+      if (error) validationErrors[key] = error
     })
     
     // Special validation for password match
@@ -200,15 +192,7 @@ export default function LoginPage() {
     }
     
     try {
-      console.log('Sending registration request:', {
-        name: registerData.name,
-        email: registerData.email,
-        phone: registerData.phone,
-        city_id: registerData.city_id,
-        role: registerData.role
-      })
-      
-      // Call backend registration endpoint directly
+      // Only send required fields to backend
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/auth/register`, {
         method: 'POST',
         headers: {
@@ -219,28 +203,20 @@ export default function LoginPage() {
           email: registerData.email,
           phone: registerData.phone,
           password: registerData.password,
-          city_id: registerData.city_id,
           role: registerData.role,
         }),
       })
 
-      console.log('Registration response status:', response.status)
-      
       const data = await response.json()
-      console.log('Registration response data:', data)
       
       if (!response.ok) {
-        // Handle specific error cases
         if (response.status === 409) {
-          // Email already exists
           toast({ 
             title: "Email Already Exists", 
             description: "An account with this email already exists. Please use a different email or try logging in.", 
             variant: "destructive" 
           })
-          // Switch to login tab to help user
           setActiveTab("login")
-          // Pre-fill the email in login form
           setLoginData(prev => ({ ...prev, email: registerData.email }))
         } else {
           throw new Error(data.message || 'Registration failed')
@@ -254,7 +230,6 @@ export default function LoginPage() {
       })
       setActiveTab("login")
     } catch (error: any) {
-      console.error('Registration error:', error)
       toast({ 
         title: "Error", 
         description: error.message || "Registration failed. Please try again.", 
@@ -405,51 +380,6 @@ export default function LoginPage() {
                       required
                     />
                     {errors.email && <p className="text-sm text-red-500">{errors.email}</p>}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="address">Address</Label>
-                    <Input
-                      id="address"
-                      name="address"
-                      placeholder="Enter your address"
-                      value={registerData.address}
-                      onChange={(e) => setRegisterData({ ...registerData, address: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="city">City *</Label>
-                      <Select
-                        value={registerData.city_id}
-                        onValueChange={(value) => setRegisterData({ ...registerData, city_id: value })}
-                        onOpenChange={(open) => !open && handleSelectBlur("city_id", registerData.city_id)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select your city" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {cities.map((city) => (
-                            <SelectItem key={city.id} value={city.id}>
-                              {city.name}, {city.state}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {errors.city_id && <p className="text-sm text-red-500">{errors.city_id}</p>}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="pincode">Pincode</Label>
-                      <Input
-                        id="pincode"
-                        name="pincode"
-                        placeholder="Enter pincode"
-                        value={registerData.pincode}
-                        onChange={(e) => setRegisterData({ ...registerData, pincode: e.target.value })}
-                      />
-                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">

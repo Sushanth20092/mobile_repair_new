@@ -1,11 +1,11 @@
 -- Supabase trigger function to automatically create profile after user email confirmation
 -- Run this in your Supabase SQL editor
 
--- Drop existing trigger and function if they exist
+-- Drop previous trigger and function if they exist
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
 
--- Function to handle new user creation with better error handling
+-- Function to handle new user creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -81,12 +81,12 @@ BEGIN
       NEW.email,
       user_phone,
       user_role,
-      true, -- is_verified
-      true, -- is_active
+      false, -- is_verified: always false on registration!
+      true,  -- is_active
       '[]'::jsonb, -- addresses
       user_city_id,
       NOW(), -- created_at
-      NOW() -- updated_at
+      NOW()  -- updated_at
     );
     
     RAISE LOG 'Profile created successfully for user: %', NEW.id;

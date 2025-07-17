@@ -37,6 +37,317 @@ import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import { supabase } from "@/lib/api"
 import { formatGBP } from "@/lib/utils"
+import { handleRegister } from "@/lib/handleRegister";
+import { Label } from "@/components/ui/label";
+import { toast } from "@/hooks/use-toast";
+import dynamic from "next/dynamic";
+import CityManualSearchBox from "../../components/CityManualSearchBox";
+import { Switch } from "@/components/ui/switch";
+
+// --- City Management Section (NEW) ---
+// (Remove duplicate imports for Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Button, Badge, Label, toast, supabase)
+// import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+// import { Input } from "@/components/ui/input";
+// import { Button } from "@/components/ui/button";
+// import { Badge } from "@/components/ui/badge";
+// import { Label } from "@/components/ui/label";
+// import { toast } from "@/hooks/use-toast";
+// import { supabase } from "@/lib/api";
+
+// Mapbox Places API (search-js)
+// import { SearchBox } from '@/components/MapboxSearchBox'; // This import is no longer needed
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const CitySearchBox = dynamic(() => import("../../components/CitySearchBox"), { ssr: false });
+
+function CityManagement() {
+  const [states, setStates] = useState<{ id: string; name: string }[]>([]);
+  const [stateId, setStateId] = useState<string>("");
+  const [city, setCity] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [pincodeInput, setPincodeInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [cities, setCities] = useState<any[]>([]);
+  const [isActive, setIsActive] = useState(true);
+
+  // Add state for editing and deleting cities
+  const [editingCity, setEditingCity] = useState<any | null>(null);
+  const [editPincodeInput, setEditPincodeInput] = useState("");
+  const [deletingCity, setDeletingCity] = useState<any | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Fetch states on mount
+  useEffect(() => {
+    supabase.from('states').select('id, name').then(({ data }) => setStates(data || []));
+    fetchCities();
+  }, []);
+
+  // Fetch cities for the table
+  const fetchCities = async () => {
+    const { data } = await supabase.from('cities').select('id, name, state_id, pincodes, latitude, longitude, is_active, created_at, updated_at');
+    setCities(data || []);
+  };
+
+  // Handle Mapbox city selection
+  const handleCitySelect = (res: any) => {
+    if (res && res.features && res.features[0]) {
+      console.log('Selected feature:', res.features[0]);
+      setCity(res.features[0].properties.name || res.features[0].text || res.features[0].place_name || "");
+      setLatitude(res.features[0].geometry.coordinates[1]?.toString() || "");
+      setLongitude(res.features[0].geometry.coordinates[0]?.toString() || "");
+    }
+  };
+
+  // Handle Enter key for pincode input
+  const handlePincodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      // The logic for adding pincodes is now handled by the form submission
+    }
+  };
+
+  // Submit to Supabase
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const pincodesArr = pincodeInput.split(',').map(p => p.trim()).filter(Boolean);
+    if (!stateId || !city.trim() || !latitude || !longitude || pincodesArr.length === 0) {
+      toast({ title: "Error", description: "All fields are required and at least one pincode must be added.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("cities").insert([
+        {
+          name: city,
+          state_id: stateId,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+          pincodes: pincodesArr,
+          is_active: true,
+        },
+      ]);
+      if (error) throw error;
+      toast({ title: "Success", description: "City added successfully!" });
+      setStateId("");
+      setCity("");
+      setLatitude("");
+      setLongitude("");
+      setPincodeInput("");
+      fetchCities();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add city.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Edit pincode save handler
+  const handleSavePincodes = async () => {
+    if (!editingCity) return;
+    const pincodesArr = editPincodeInput.split(',').map(p => p.trim()).filter(Boolean);
+    if (pincodesArr.length === 0) {
+      toast({ title: "Error", description: "At least one pincode is required.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("cities").update({ pincodes: pincodesArr }).eq("id", editingCity.id);
+      if (error) throw error;
+      toast({ title: "Success", description: "Pincodes updated." });
+      setEditingCity(null);
+      setEditPincodeInput("");
+      fetchCities();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to update pincodes.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Delete city handler
+  const handleDeleteCity = async () => {
+    if (!deletingCity) return;
+    setDeleteLoading(true);
+    try {
+      const { error } = await supabase.from("cities").delete().eq("id", deletingCity.id);
+      if (error) throw error;
+      toast({ title: "Success", description: "City deleted." });
+      setDeletingCity(null);
+      fetchCities();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to delete city.", variant: "destructive" });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  // Helper to get state name from id
+  const getStateName = (id: string) => states.find(s => s.id === id)?.name || "";
+
+  // In the table, replace the is_active text with a Switch. Toggling the switch updates is_active in Supabase.
+  const handleToggleActive = async (city: any, checked: boolean) => {
+    try {
+      const { error } = await supabase.from("cities").update({ is_active: checked }).eq("id", city.id);
+      if (error) throw error;
+      fetchCities();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to update status.", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card className="mb-8">
+      <CardHeader>
+        <CardTitle>City Management</CardTitle>
+        <CardDescription>Add a new city to your service areas</CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-visible">
+        <form className="space-y-6 overflow-visible" onSubmit={e => { e.preventDefault(); handleSubmit(e); }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="state">State</Label>
+              <Select value={stateId} onValueChange={setStateId} required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select state" />
+                </SelectTrigger>
+                <SelectContent>
+                  {states.map((state) => (
+                    <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="city">City (autocomplete)</Label>
+              {MAPBOX_TOKEN ? (
+                <CityManualSearchBox
+                  onSelect={(name: string, lat: number, lng: number) => {
+                    console.log('Parent onSelect:', name, lat, lng);
+                    setCity(name);
+                    setLatitude(lat.toString());
+                    setLongitude(lng.toString());
+                  }}
+                  accessToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN as string}
+                />
+              ) : (
+                <div className="text-red-500 text-sm">Mapbox token not set</div>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="latitude">Latitude</Label>
+              <Input id="latitude" value={latitude} readOnly />
+            </div>
+            <div>
+              <Label htmlFor="longitude">Longitude</Label>
+              <Input id="longitude" value={longitude} readOnly />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="pincodes">Pincodes</Label>
+            <Input
+              id="pincodes"
+              value={pincodeInput}
+              onChange={e => setPincodeInput(e.target.value)}
+              onKeyDown={handlePincodeKeyDown}
+              placeholder="Enter comma-separated pin codes (e.g. 123456,654321)"
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading}>{loading ? "Adding..." : "Add City"}</Button>
+        </form>
+        {/* Existing Cities Table */}
+        <div className="mt-10">
+          <h3 className="text-lg font-semibold mb-2">Existing Cities</h3>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border text-sm">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="px-2 py-1 text-left">City</th>
+                  <th className="px-2 py-1 text-left">State</th>
+                  <th className="px-2 py-1 text-left">Pincodes</th>
+                  <th className="px-2 py-1 text-left">Latitude</th>
+                  <th className="px-2 py-1 text-left">Longitude</th>
+                  <th className="px-2 py-1 text-left">Active</th>
+                  <th className="px-2 py-1 text-left">Created</th>
+                  <th className="px-2 py-1 text-left">Updated</th>
+                  <th className="px-2 py-1 text-left">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cities.map(city => (
+                  <tr key={city.id}>
+                    <td className="px-2 py-1">{city.name}</td>
+                    <td className="px-2 py-1">{getStateName(city.state_id)}</td>
+                    <td className="px-2 py-1">{(city.pincodes || []).join(", ")}</td>
+                    <td className="px-2 py-1">{city.latitude}</td>
+                    <td className="px-2 py-1">{city.longitude}</td>
+                    <td className="px-2 py-1">
+                      <Switch checked={!!city.is_active} onCheckedChange={checked => handleToggleActive(city, checked)} />
+                    </td>
+                    <td className="px-2 py-1">{city.created_at ? new Date(city.created_at).toLocaleDateString() : ""}</td>
+                    <td className="px-2 py-1">{city.updated_at ? new Date(city.updated_at).toLocaleDateString() : ""}</td>
+                    <td className="px-2 py-1 flex gap-2">
+                      <Button size="icon" variant="ghost" title="Edit Pincodes" onClick={() => { setEditingCity(city); setEditPincodeInput((city.pincodes || []).join(", ")); }}>
+                        <span role="img" aria-label="Edit">✏️</span>
+                      </Button>
+                      <Button size="icon" variant="ghost" title="Delete City" onClick={() => setDeletingCity(city)}>
+                        <span role="img" aria-label="Delete">🗑️</span>
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardContent>
+      {/* Edit Pincode Modal */}
+      {editingCity && (
+        <Dialog open={!!editingCity} onOpenChange={open => { if (!open) setEditingCity(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Pincodes for {editingCity.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <Label htmlFor="edit-pincodes">Pincodes</Label>
+              <Input
+                id="edit-pincodes"
+                value={editPincodeInput}
+                onChange={e => setEditPincodeInput(e.target.value)}
+                placeholder="Enter comma-separated pin codes"
+              />
+            </div>
+            <DialogFooter>
+              <Button onClick={handleSavePincodes} disabled={loading}>{loading ? "Saving..." : "Save"}</Button>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {/* Delete City Modal */}
+      {deletingCity && (
+        <Dialog open={!!deletingCity} onOpenChange={open => { if (!open) setDeletingCity(null); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete City</DialogTitle>
+            </DialogHeader>
+            <div>Are you sure you want to delete <b>{deletingCity.name}</b>?</div>
+            <DialogFooter>
+              <Button onClick={handleDeleteCity} disabled={deleteLoading}>{deleteLoading ? "Deleting..." : "Delete"}</Button>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </Card>
+  );
+}
 
 
 type Category = { id: string; name: string };
@@ -390,40 +701,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleAddCity = async () => {
-    setAddingCity(true);
-    const pincodesArr = cityForm.pincodes.split(",").map(p => p.trim()).filter(Boolean);
-    const delivery_charges_standard = cityForm.delivery_charges_standard ? parseFloat(cityForm.delivery_charges_standard) : 50;
-    const delivery_charges_express = cityForm.delivery_charges_express ? parseFloat(cityForm.delivery_charges_express) : 100;
-    try {
-      const res = await fetch("/api/admin/add-city", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: cityForm.name.trim(),
-          state: cityForm.state.trim(),
-          pincodes: pincodesArr,
-          delivery_charges_standard,
-          delivery_charges_express,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({ title: "Error", description: data.message || "Failed to add city", variant: "destructive" });
-        setAddingCity(false);
-        return;
-      }
-      toast({ title: "City Added", description: `${cityForm.name} added successfully` });
-      setShowAddCity(false);
-      setCityForm({ name: "", state: "", pincodes: "", delivery_charges_standard: "", delivery_charges_express: "" });
-      setAddingCity(false);
-      // Optionally: refresh city list here
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message || "Failed to add city", variant: "destructive" });
-      setAddingCity(false);
-    }
-  };
-
   // Add Fault
   const handleAddFault = async () => {
     setFaultsTabError("");
@@ -503,6 +780,9 @@ export default function AdminDashboard() {
             <h1 className="text-3xl font-bold">Welcome back, {user?.name}!</h1>
             <p className="text-muted-foreground">Admin dashboard overview and management</p>
           </div>
+          <Button variant="outline" onClick={() => router.push("/customer/dashboard")}>
+            Dashboard
+          </Button>
           <button
             onClick={handleLogout}
             className="flex items-center gap-2 px-4 py-2 border rounded text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -573,32 +853,6 @@ export default function AdminDashboard() {
           </Dialog>
         </div>
 
-        {/* Add City Button */}
-        <div className="flex justify-end mb-4">
-          <Button variant="default" onClick={() => setShowAddCity(true)}>+ Add City</Button>
-        </div>
-        <Dialog open={showAddCity} onOpenChange={setShowAddCity}>
-          <DialogTrigger asChild></DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add City</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <Input ref={addCityDialogRef} placeholder="City name" value={cityForm.name} onChange={e => setCityForm(f => ({ ...f, name: e.target.value }))} />
-              <Input placeholder="State" value={cityForm.state} onChange={e => setCityForm(f => ({ ...f, state: e.target.value }))} />
-              <Input placeholder="Pincodes (comma separated)" value={cityForm.pincodes} onChange={e => setCityForm(f => ({ ...f, pincodes: e.target.value }))} />
-              <Input placeholder="Delivery Charge Standard (default 50)" type="number" value={cityForm.delivery_charges_standard} onChange={e => setCityForm(f => ({ ...f, delivery_charges_standard: e.target.value }))} />
-              <Input placeholder="Delivery Charge Express (default 100)" type="number" value={cityForm.delivery_charges_express} onChange={e => setCityForm(f => ({ ...f, delivery_charges_express: e.target.value }))} />
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddCity} disabled={addingCity}>{addingCity ? "Adding..." : "Add City"}</Button>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card>
@@ -649,9 +903,9 @@ export default function AdminDashboard() {
             <TabsTrigger value="agent-requests">Agent Requests ({loading ? "..." : stats?.pendingAgents ?? 0})</TabsTrigger>
             <TabsTrigger value="agents">Agents</TabsTrigger>
             <TabsTrigger value="bookings">All Bookings</TabsTrigger>
-            <TabsTrigger value="cities">City Management</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="faults">Faults Management</TabsTrigger>
+            <TabsTrigger value="cities">City Management</TabsTrigger>
           </TabsList>
 
           {/* Agent Requests Tab */}
@@ -992,31 +1246,6 @@ export default function AdminDashboard() {
             </Card>
           </TabsContent>
 
-          {/* Cities Tab */}
-          <TabsContent value="cities" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>City Management</CardTitle>
-                <CardDescription>Manage service areas and city-wise performance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {cities.map((city) => (
-                    <div key={city.id} className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg flex justify-between items-center">
-                      <div>
-                        <h4 className="font-semibold">{city.name}</h4>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline">Edit</Button>
-                        <Button size="sm" variant="outline" className="text-red-500">Delete</Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1108,8 +1337,8 @@ export default function AdminDashboard() {
                 ) : (
                   <div>
                     <div className="mb-4 flex gap-2 items-end">
-                      <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId} className="w-64">
-                        <SelectTrigger>
+                      <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
+                        <SelectTrigger className="w-64">
                           <SelectValue placeholder="Select device" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1204,6 +1433,11 @@ export default function AdminDashboard() {
                 </DialogContent>
               </Dialog>
             )}
+          </TabsContent>
+
+          {/* City Management Tab */}
+          <TabsContent value="cities" className="space-y-4">
+            <CityManagement />
           </TabsContent>
         </Tabs>
       </div>

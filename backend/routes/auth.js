@@ -76,10 +76,10 @@ router.post("/register", registerValidation, async (req, res) => {
   try {
     const { name, email, phone, password, city_id, role = "user" } = req.body
     
-    // Validate required fields
-    if (!name || !email || !phone || !password || !city_id) {
+    // Validate required fields (city_id is now optional)
+    if (!name || !email || !phone || !password) {
       return res.status(400).json({ 
-        message: "Missing required fields: name, email, phone, password, city_id" 
+        message: "Missing required fields: name, email, phone, password" 
       })
     }
 
@@ -116,15 +116,17 @@ router.post("/register", registerValidation, async (req, res) => {
     
     console.log('Attempting to register user:', { email, name, phone, city_id, role })
     
-    // Register user in Supabase Auth, include city_id in user metadata
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
+    // Register user in Supabase Auth, include city_id in user metadata only if present
+    const userMetadata = { name, phone, role }
+    if (city_id) userMetadata.city_id = city_id
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
       options: { 
-        data: { name, phone, role, city_id },
+        data: userMetadata,
         emailRedirectTo: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/callback`
       }
-  })
+    })
     
     if (error) {
       console.error('Supabase auth error:', error)
@@ -144,25 +146,24 @@ router.post("/register", registerValidation, async (req, res) => {
         
         if (profileError) {
           console.error('Profile not found after trigger, attempting manual creation:', profileError)
-          
           // Manual fallback: create profile manually
+          const profileInsert = {
+            id: data.user.id,
+            name: name,
+            phone: phone,
+            role: role,
+            is_verified: false,
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            password: hashedPassword,
+            addresses: '[]',
+            email: email
+          }
+          if (city_id) profileInsert.city_id = city_id
           const { error: insertError } = await supabase
             .from("profiles")
-            .insert([{
-              id: data.user.id,
-              name: name,
-              phone: phone,
-              role: role,
-              is_verified: true,
-              city_id: city_id,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              password: hashedPassword,
-              addresses: '[]',
-              email: email
-            }])
-          
+            .insert([profileInsert])
           if (insertError) {
             console.error('Manual profile creation failed:', insertError)
           } else {

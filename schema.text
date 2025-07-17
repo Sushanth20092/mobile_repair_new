@@ -12,7 +12,7 @@ CREATE TABLE public.agent_applications (
   pincode text NOT NULL,
   experience text,
   specializations ARRAY NOT NULL DEFAULT '{}'::text[],
-  id_proof text,
+  id_proof text NOT NULL,
   shop_images ARRAY NOT NULL DEFAULT '{}'::text[],
   agree_to_terms boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])),
@@ -21,10 +21,12 @@ CREATE TABLE public.agent_applications (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   city_id uuid,
+  latitude double precision,
+  longitude double precision,
   CONSTRAINT agent_applications_pkey PRIMARY KEY (id),
-  CONSTRAINT agent_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT agent_applications_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES auth.users(id),
   CONSTRAINT agent_applications_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
-  CONSTRAINT agent_applications_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES auth.users(id)
+  CONSTRAINT agent_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.agent_credentials (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -60,6 +62,8 @@ CREATE TABLE public.agents (
   phone text NOT NULL,
   experience text,
   name text NOT NULL DEFAULT ''::text,
+  latitude double precision,
+  longitude double precision,
   CONSTRAINT agents_pkey PRIMARY KEY (id),
   CONSTRAINT agents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT agents_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
@@ -103,12 +107,12 @@ CREATE TABLE public.bookings (
   collection_date date,
   collection_time text,
   CONSTRAINT bookings_pkey PRIMARY KEY (id),
-  CONSTRAINT bookings_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
-  CONSTRAINT bookings_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
   CONSTRAINT bookings_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id),
-  CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT bookings_service_type_id_fkey FOREIGN KEY (service_type_id) REFERENCES public.service_types(id),
   CONSTRAINT bookings_duration_type_id_fkey FOREIGN KEY (duration_type_id) REFERENCES public.duration_types(id),
-  CONSTRAINT bookings_service_type_id_fkey FOREIGN KEY (service_type_id) REFERENCES public.service_types(id)
+  CONSTRAINT bookings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT bookings_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id),
+  CONSTRAINT bookings_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
 );
 CREATE TABLE public.brands (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -133,8 +137,8 @@ CREATE TABLE public.chat_messages (
   is_read boolean DEFAULT false,
   timestamp timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
-  CONSTRAINT chat_messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id),
-  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
+  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id),
+  CONSTRAINT chat_messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id)
 );
 CREATE TABLE public.chat_participants (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -159,14 +163,15 @@ CREATE TABLE public.chats (
 CREATE TABLE public.cities (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name text NOT NULL UNIQUE,
-  state text NOT NULL,
   pincodes ARRAY NOT NULL,
   is_active boolean DEFAULT true,
-  delivery_charges_standard double precision DEFAULT 50,
-  delivery_charges_express double precision DEFAULT 100,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
-  CONSTRAINT cities_pkey PRIMARY KEY (id)
+  latitude double precision,
+  longitude double precision,
+  state_id uuid,
+  CONSTRAINT cities_pkey PRIMARY KEY (id),
+  CONSTRAINT cities_state_id_fkey FOREIGN KEY (state_id) REFERENCES public.states(id)
 );
 CREATE TABLE public.devices (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -179,9 +184,9 @@ CREATE TABLE public.devices (
   category_id uuid NOT NULL,
   brand_id uuid NOT NULL,
   CONSTRAINT devices_pkey PRIMARY KEY (id),
-  CONSTRAINT devices_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
+  CONSTRAINT devices_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
   CONSTRAINT devices_model_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
-  CONSTRAINT devices_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id)
+  CONSTRAINT devices_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id)
 );
 CREATE TABLE public.duration_types (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -220,10 +225,12 @@ CREATE TABLE public.profiles (
   password text,
   addresses jsonb DEFAULT '[]'::jsonb,
   email text NOT NULL UNIQUE,
+  latitude double precision,
+  longitude double precision,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
-  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id),
   CONSTRAINT fk_profiles_user FOREIGN KEY (id) REFERENCES auth.users(id),
-  CONSTRAINT profiles_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
+  CONSTRAINT profiles_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
+  CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.reviews (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -238,10 +245,10 @@ CREATE TABLE public.reviews (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT reviews_pkey PRIMARY KEY (id),
-  CONSTRAINT reviews_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id),
-  CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT reviews_response_responded_by_fkey FOREIGN KEY (response_responded_by) REFERENCES public.agents(id),
   CONSTRAINT reviews_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id),
-  CONSTRAINT reviews_response_responded_by_fkey FOREIGN KEY (response_responded_by) REFERENCES public.agents(id)
+  CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT reviews_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id)
 );
 CREATE TABLE public.service_types (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -253,4 +260,12 @@ CREATE TABLE public.service_types (
   updated_at timestamp with time zone DEFAULT now(),
   sort_order integer,
   CONSTRAINT service_types_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.states (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  name text NOT NULL UNIQUE,
+  country text NOT NULL DEFAULT 'United Kingdom'::text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT states_pkey PRIMARY KEY (id)
 );

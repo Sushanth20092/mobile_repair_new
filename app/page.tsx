@@ -82,7 +82,7 @@ export default function HomePage() {
 
   const handleRepairNow = () => {
     if (user) {
-      router.push("/")
+      router.push("/customer/dashboard")
     } else {
       router.push("/auth/login")
     }
@@ -130,9 +130,7 @@ export default function HomePage() {
 
             {user ? (
               <>
-                <Link href={`/${user.role}/dashboard`}>
-                  <Button variant="outline">Dashboard</Button>
-                </Link>
+                <Button variant="outline" onClick={() => router.push("/customer/dashboard")}>Dashboard</Button>
                 <Button
                   variant="destructive"
                   onClick={() => {
