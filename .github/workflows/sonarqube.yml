@@ -22,14 +22,11 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
+          java-version: '21'  # ✅ Update to Java 21
           distribution: 'temurin'
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v1.1.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        uses: SonarSource/sonarqube-scan-action@v2.0.2  # ✅ Use latest stable version
         with:
           projectBaseDir: .
           args: >
@@ -37,4 +34,6 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.verbose=true
             -X
-
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
