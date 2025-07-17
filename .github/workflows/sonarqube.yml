@@ -8,17 +8,23 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   pull-requests: read
 
 jobs:
-  Analysis:
+  sonarqube:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Analyze with SonarQube
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'  # Adjust this based on your project
+          distribution: 'temurin'
+
+      - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v1.1.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -29,3 +35,4 @@ jobs:
             -Dsonar.projectKey=mobile_repair
             -Dsonar.sources=.
             -Dsonar.verbose=true
+
