@@ -1,0 +1,40 @@
+name: SonarQube analysis
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'  # ✅ Java 21
+          distribution: 'temurin'
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2.0.2  # ✅ Updated action version
+        with:
+          projectBaseDir: .
+          args: >
+            -Dsonar.projectKey=Sushanth20092_mobile_repair
+            -Dsonar.organization=sushanth20092
+            -Dsonar.sources=.
+            -Dsonar.verbose=true
+            -X
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
