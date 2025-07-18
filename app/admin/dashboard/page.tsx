@@ -43,6 +43,7 @@ import { toast } from "@/hooks/use-toast";
 import dynamic from "next/dynamic";
 import CityManualSearchBox from "../../components/CityManualSearchBox";
 import { Switch } from "@/components/ui/switch";
+import React from "react";
 
 // --- City Management Section (NEW) ---
 // (Remove duplicate imports for Card, CardHeader, CardTitle, CardDescription, CardContent, Input, Button, Badge, Label, toast, supabase)
@@ -388,6 +389,7 @@ export default function AdminDashboard() {
   // Add state for approval/rejection and tempPassword
   const [actionStates, setActionStates] = useState<Record<string, { approved: boolean, rejected: boolean, tempPassword?: string }>>({});
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>("");
   const [expandedRequestId, setExpandedRequestId] = useState<string | null>(null);
 
   // Faults Management State
@@ -422,8 +424,8 @@ export default function AdminDashboard() {
     const fetchAll = async () => {
       try {
         const [agentsRes, agentRequestsRes, bookingsRes] = await Promise.all([
-          supabase.from('agents').select('*'),
-          supabase.from('agent_applications').select('*').eq('status', 'pending'),
+          supabase.from('agents').select('*, state:states(name)'),
+          supabase.from('agent_applications').select('*, state:states(name)').eq('status', 'pending'),
           supabase.from('bookings').select('*'),
         ])
         setAgents(agentsRes.data || [])
@@ -519,18 +521,20 @@ export default function AdminDashboard() {
   }
   const handleRejectAgent = async (requestId: string) => {
     setRejectingId(requestId);
-  }
+    setRejectionReason("");
+  };
   const confirmRejectAgent = async (requestId: string) => {
     try {
       const res = await fetch('/api/agents/reject', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applicationId: requestId, adminId: user?.id }),
+        body: JSON.stringify({ applicationId: requestId, adminId: user?.id, rejectionReason }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || data.error || 'Failed to reject agent')
       setActionStates((prev) => ({ ...prev, [requestId]: { approved: false, rejected: true } }))
       setRejectingId(null);
+      setRejectionReason("");
       toast({
         title: "Agent Rejected",
         description: "Agent request has been rejected",
@@ -543,6 +547,7 @@ export default function AdminDashboard() {
         variant: "destructive",
       })
       setRejectingId(null);
+      setRejectionReason("");
     }
   }
 
@@ -961,30 +966,12 @@ export default function AdminDashboard() {
                               <span className="ml-1 capitalize">{request.status}</span>
                             </Badge>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-muted-foreground mb-3">
-                            <p className="flex items-center gap-1">
-                              <Building className="h-3 w-3" />
-                              <strong>Shop:</strong> {request.shop_name}
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <Mail className="h-3 w-3" />
-                              <strong>Email:</strong> {request.email}
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              <strong>Phone:</strong> {request.phone}
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              <strong>City:</strong> {getCityName(request.city_id)}
-                            </p>
-                            <p>
-                              <strong>Experience:</strong> {request.experience} years
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              Applied: {new Date(request.created_at).toLocaleDateString()}
-                            </p>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground mb-2">
+                            <div><span className="font-medium">Email:</span> {request.email}</div>
+                            <div><span className="font-medium">City:</span> {getCityName(request.city_id)}</div>
+                            <div><span className="font-medium">State:</span> {typeof request.state === 'object' && request.state !== null ? request.state.name : (request.state || 'N/A')}</div>
+                            <div><span className="font-medium">Pincode:</span> {request.pincode}</div>
+                            <div><span className="font-medium">Applied:</span> {request.created_at ? new Date(request.created_at).toLocaleString() : 'N/A'}</div>
                           </div>
                           <div className="mb-3">
                             <p className="text-sm font-medium mb-1">Address:</p>
@@ -1446,10 +1433,17 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
           <div className="bg-white dark:bg-gray-900 rounded-lg p-6 max-w-sm w-full shadow-lg">
             <h2 className="text-lg font-semibold mb-2">Reject Application</h2>
-            <p className="mb-4">Do you really want to reject the application?</p>
+            <p className="mb-2">Please provide a reason for rejection:</p>
+            <textarea
+              className="w-full border rounded p-2 mb-4 min-h-[60px] text-sm"
+              placeholder="Enter rejection reason..."
+              value={rejectionReason}
+              onChange={e => setRejectionReason(e.target.value)}
+              autoFocus
+            />
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setRejectingId(null)}>Cancel</Button>
-              <Button variant="destructive" onClick={() => confirmRejectAgent(rejectingId)}>Reject</Button>
+              <Button variant="outline" onClick={() => { setRejectingId(null); setRejectionReason(""); }}>Cancel</Button>
+              <Button variant="destructive" onClick={() => confirmRejectAgent(rejectingId)} disabled={!rejectionReason.trim()}>Reject</Button>
             </div>
           </div>
         </div>
@@ -1460,6 +1454,15 @@ export default function AdminDashboard() {
 
 function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: any[], getCityName: (id: string) => string }) {
   const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [states, setStates] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    // Fetch states for state name lookup from Supabase
+    (async () => {
+      const { data } = await supabase.from('states').select('id, name');
+      setStates(data || []);
+    })();
+  }, []);
+  const getStateName = (agent: any) => agent.state?.name || agent.state_id || 'N/A';
   const approvedAgents = agents.filter((a) => a);
   return (
     <div className="overflow-x-auto">
@@ -1479,70 +1482,84 @@ function AgentsTable({ agents, cities, getCityName }: { agents: any[], cities: a
           </tr>
         </thead>
         <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-          {approvedAgents.map((agent) => (
-            <>
-              <tr key={agent.id} className="hover:bg-muted/50 transition-colors">
-                <td className="px-4 py-2 whitespace-nowrap">{agent.name}</td>
-                <td className="px-4 py-2 whitespace-nowrap">{agent.shop_name}</td>
-                <td className="px-4 py-2 whitespace-nowrap">{agent.phone}</td>
-                <td className="px-4 py-2 whitespace-nowrap">{agent.email}</td>
-                <td className="px-4 py-2 whitespace-nowrap">{getCityName(agent.city_id)}</td>
-                <td className="px-4 py-2 text-center">{agent.is_online ? '✅' : '❌'}</td>
-                <td className="px-4 py-2 text-center">{agent.rating_average?.toFixed(1) ?? '0.0'} <span className="text-xs text-muted-foreground">({agent.rating_count ?? 0})</span></td>
-                <td className="px-4 py-2 text-center">{agent.completed_jobs ?? 0}</td>
-                <td className="px-4 py-2 text-center">{formatGBP(agent.earnings_total ?? 0)}</td>
-                <td className="px-4 py-2 text-center">
-                  <Button size="sm" variant="outline" onClick={() => setExpandedAgentId(expandedAgentId === agent.id ? null : agent.id)}>
-                    <Eye className="h-3 w-3 mr-1" />
-                    {expandedAgentId === agent.id ? 'Hide Details' : 'View Details'}
-                  </Button>
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={10} className="p-0 border-none">
-                  <motion.div
-                    initial={false}
-                    animate={expandedAgentId === agent.id ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    style={{ overflow: 'hidden' }}
-                  >
-                    {expandedAgentId === agent.id && (
-                      <div className="p-4 bg-muted/50 rounded-b-lg flex flex-col md:flex-row gap-6">
-                        <div className="flex-shrink-0">
-                          <h4 className="font-semibold mb-2">ID Proof</h4>
-                          <img src={agent.id_proof} alt="ID Proof" className="w-40 h-40 object-cover rounded shadow border mb-4" />
-                        </div>
-                        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="font-semibold mb-1">Specializations</h4>
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {(agent.specializations || []).length > 0 ? agent.specializations.map((spec: string, idx: number) => (
-                                <Badge key={idx} variant="secondary" className="text-xs">{spec}</Badge>
-                              )) : <span className="text-muted-foreground text-xs">None</span>}
+          {approvedAgents.map((agent) => {
+            const isExpanded = expandedAgentId === agent.id;
+            return (
+              <React.Fragment key={agent.id}>
+                <tr className="hover:bg-muted/50 transition-colors">
+                  <td className="px-4 py-2 whitespace-nowrap">{agent.name}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">{agent.shop_name}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">{agent.phone}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">{agent.email}</td>
+                  <td className="px-4 py-2 whitespace-nowrap">{getCityName(agent.city_id)}</td>
+                  <td className="px-4 py-2 text-center">{agent.is_online ? '✅' : '❌'}</td>
+                  <td className="px-4 py-2 text-center">{agent.rating_average?.toFixed(1) ?? '0.0'} <span className="text-xs text-muted-foreground">({agent.rating_count ?? 0})</span></td>
+                  <td className="px-4 py-2 text-center">{agent.completed_jobs ?? 0}</td>
+                  <td className="px-4 py-2 text-center">{formatGBP(agent.earnings_total ?? 0)}</td>
+                  <td className="px-4 py-2 text-center">
+                    <Button size="sm" variant="outline" onClick={() => setExpandedAgentId(expandedAgentId === agent.id ? null : agent.id)}>
+                      <Eye className="h-3 w-3 mr-1" />
+                      {expandedAgentId === agent.id ? 'Hide Details' : 'View Details'}
+                    </Button>
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={10} className="p-0 border-none">
+                      <motion.div
+                        initial={false}
+                        animate={isExpanded ? { height: 'auto', opacity: 1 } : { height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div className="p-4 bg-muted/50 rounded-b-lg flex flex-col md:flex-row gap-6">
+                          <div className="flex-shrink-0">
+                            <h4 className="font-semibold mb-2">ID Proof</h4>
+                            <img src={agent.id_proof} alt="ID Proof" className="w-40 h-40 object-cover rounded shadow border mb-4" />
+                          </div>
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* Location Section - Clean, grouped, no duplicate City */}
+                            <div className="bg-background rounded-lg p-4 border mb-4">
+                              <h4 className="font-semibold mb-2">Location</h4>
+                              <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                                <div><span className="font-medium">City:</span> {getCityName(agent.city_id)}</div>
+                                <div><span className="font-medium">State:</span> {getStateName(agent)}</div>
+                                <div><span className="font-medium">Latitude:</span> {agent.latitude ?? 'N/A'}</div>
+                                <div><span className="font-medium">Longitude:</span> {agent.longitude ?? 'N/A'}</div>
+                              </div>
                             </div>
-                            <h4 className="font-semibold mb-1">Experience</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{agent.experience || 'N/A'}</p>
-                            <h4 className="font-semibold mb-1">Last Seen</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'N/A'}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold mb-1">Earnings Paid</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_paid ?? 0)}</p>
-                            <h4 className="font-semibold mb-1">Earnings Pending</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_pending ?? 0)}</p>
-                            <h4 className="font-semibold mb-1">Created At</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{agent.created_at ? new Date(agent.created_at).toLocaleString() : 'N/A'}</p>
-                            <h4 className="font-semibold mb-1">Updated At</h4>
-                            <p className="text-sm text-muted-foreground mb-2">{agent.updated_at ? new Date(agent.updated_at).toLocaleString() : 'N/A'}</p>
+                            {/* Existing Details */}
+                            <div>
+                              <h4 className="font-semibold mb-1">Specializations</h4>
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {(agent.specializations || []).length > 0 ? agent.specializations.map((spec: string, idx: number) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">{spec}</Badge>
+                                )) : <span className="text-muted-foreground text-xs">None</span>}
+                              </div>
+                              <h4 className="font-semibold mb-1">Experience</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{agent.experience || 'N/A'}</p>
+                              <h4 className="font-semibold mb-1">Last Seen</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'N/A'}</p>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold mb-1">Earnings Paid</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_paid ?? 0)}</p>
+                              <h4 className="font-semibold mb-1">Earnings Pending</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{formatGBP(agent.earnings_pending ?? 0)}</p>
+                              <h4 className="font-semibold mb-1">Created At</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{agent.created_at ? new Date(agent.created_at).toLocaleString() : 'N/A'}</p>
+                              <h4 className="font-semibold mb-1">Updated At</h4>
+                              <p className="text-sm text-muted-foreground mb-2">{agent.updated_at ? new Date(agent.updated_at).toLocaleString() : 'N/A'}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </motion.div>
-                </td>
-              </tr>
-            </>
-          ))}
+                      </motion.div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

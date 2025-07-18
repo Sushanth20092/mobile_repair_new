@@ -17,12 +17,32 @@ import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/api"
 import { useAuth } from "@/contexts/auth-context"
+import dynamic from 'next/dynamic';
+import { useRef, useCallback } from "react";
+import mapboxgl from 'mapbox-gl';
+import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
+const Geocoder = dynamic(() => import('@mapbox/mapbox-gl-geocoder'), { ssr: false });
+const Map = dynamic(() => import('react-map-gl').then(mod => mod.Map), { ssr: false });
+const Marker = dynamic(() => import('react-map-gl').then(mod => mod.Marker), { ssr: false });
+
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 export default function AgentApplicationPage() {
   const router = useRouter()
   const { toast } = useToast()
   const { user } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
+  type City = { id: string; name: string; state_id: string; latitude: number | null; longitude: number | null; pincodes: string[] };
+  const [states, setStates] = useState<{ id: string; name: string }[]>([]);
+  const [stateId, setStateId] = useState<string>("");
+  const [cities, setCities] = useState<City[]>([]);
+  const [filteredCities, setFilteredCities] = useState<City[]>([]);
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null); // [lng, lat]
+  const [pin, setPin] = useState<[number, number] | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+
+  // Add latitude/longitude to formData
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -36,10 +56,10 @@ export default function AgentApplicationPage() {
     idProof: null as string | null,
     shopImages: [] as string[],
     agreeToTerms: false,
-    
-  })
-  const [cities, setCities] = useState<{ id: string, name: string }[]>([])
-  const [citiesLoading, setCitiesLoading] = useState(true)
+    latitude: "",
+    longitude: "",
+  });
+
   const [applications, setApplications] = useState<any[]>([]);
   const [idProofError, setIdProofError] = useState("");
   const [shopImagesError, setShopImagesError] = useState("");
@@ -53,19 +73,98 @@ export default function AgentApplicationPage() {
     "Gaming Console Repair",
   ]
 
+  // Fetch states on mount
   useEffect(() => {
-    const fetchCities = async () => {
-      try {
-        const { data } = await supabase.from('cities').select('id, name')
-        setCities(data || [])
-      } catch {
-        setCities([])
-      } finally {
-        setCitiesLoading(false)
+    supabase.from('states').select('id, name').then(({ data }) => setStates(data || []));
+  }, []);
+
+  // Fetch all cities on mount (for filtering)
+  useEffect(() => {
+    supabase.from('cities').select('id, name, state_id, latitude, longitude, pincodes').then(({ data }) => {
+      if (Array.isArray(data)) {
+        // Filter out any cities missing required fields
+        setCities(data.filter((c): c is City => c && c.id && c.name && c.state_id && typeof c.latitude === 'number' && typeof c.longitude === 'number' && Array.isArray(c.pincodes)));
+      } else {
+        setCities([]);
+      }
+    });
+  }, []);
+
+  // Filter cities by selected state
+  useEffect(() => {
+    if (stateId) {
+      setFilteredCities(cities.filter(city => city.state_id === stateId));
+    } else {
+      setFilteredCities([]);
+    }
+    // Reset city and map when state changes
+    setFormData(f => ({ ...f, city_id: "" }));
+    setMapCenter(null);
+    setPin(null);
+  }, [stateId, cities]);
+
+  // Center map on selected city
+  useEffect(() => {
+    if (formData.city_id) {
+      const city = cities.find(c => c.id === formData.city_id);
+      if (city && typeof city.latitude === 'number' && typeof city.longitude === 'number') {
+        setMapCenter([city.longitude, city.latitude]);
+        setPin([city.longitude, city.latitude]);
       }
     }
-    fetchCities()
-  }, [])
+  }, [formData.city_id, cities]);
+
+  const mapRef = useRef<any>(null);
+
+  // Calculate bounding box for selected city
+  const city = formData.city_id ? cities.find(c => c.id === formData.city_id) : null;
+  const bounds: [number, number, number, number] | undefined =
+    city && typeof city.latitude === 'number' && typeof city.longitude === 'number'
+      ? [
+          city.longitude - 0.1, city.latitude - 0.1, // SW
+          city.longitude + 0.1, city.latitude + 0.1  // NE
+        ]
+      : undefined;
+
+  // Handle pin drop on map
+  const handleMapClick = async (e: any) => {
+    if (!formData.city_id) return;
+    const city = cities.find(c => c.id === formData.city_id);
+    if (!city || typeof city.latitude !== 'number' || typeof city.longitude !== 'number') return;
+    // Bounding box: 0.1° buffer
+    const minLat = city.latitude - 0.1;
+    const maxLat = city.latitude + 0.1;
+    const minLng = city.longitude - 0.1;
+    const maxLng = city.longitude + 0.1;
+    const lng = e.lngLat.lng;
+    const lat = e.lngLat.lat;
+    if (lat < minLat || lat > maxLat || lng < minLng || lng > maxLng) {
+      // Optionally show a toast or error
+      return;
+    }
+    setPin([lng, lat]);
+    setFormData(f => ({ ...f, latitude: lat.toString(), longitude: lng.toString() }));
+    // Reverse geocode
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.features && data.features.length > 0) {
+        // Find address and pincode
+        const address = data.features[0].place_name || "";
+        let pincode = "";
+        for (const ctx of data.features[0].context || []) {
+          if (ctx.id && ctx.id.startsWith("postcode")) {
+            pincode = ctx.text;
+            break;
+          }
+        }
+        setFormData(f => ({ ...f, shopAddress: address, pincode, latitude: lat.toString(), longitude: lng.toString() }));
+      }
+    } catch (err) {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     supabase.from('agent_applications').select('*').then(({ data }) => setApplications(data || []));
@@ -130,6 +229,7 @@ export default function AgentApplicationPage() {
     (app: any) => app.user_id === user?.id && app.status === "pending"
   )
 
+  // Update handleSubmit to include state_id and user_id, and redirect to /agent/request-submitted on success
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIdProofError("");
@@ -163,28 +263,31 @@ export default function AgentApplicationPage() {
         setIsLoading(false);
         return;
       }
-      // Proceed with insert if all validations pass
+      // Insert into agent_applications
       const { data, error } = await supabase.from('agent_applications').insert([
         {
-          user_id: user?.id,
+          user_id: userData.user.id,
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
           shop_name: formData.shopName,
           shop_address: formData.shopAddress,
           city_id: formData.city_id,
+          state_id: stateId,
           pincode: formData.pincode,
           experience: formData.experience,
           specializations: formData.specializations,
           id_proof: formData.idProof,
           shop_images: formData.shopImages,
           agree_to_terms: formData.agreeToTerms,
+          latitude: formData.latitude,
+          longitude: formData.longitude,
           // status, reviewed_by, reviewed_at, created_at, updated_at are handled by default
         }
       ])
       if (error) throw error
       toast({ title: "Success", description: "Application submitted!" })
-      router.push("/agent/dashboard")
+      router.push("/agent/request-submitted")
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Failed to submit application.", variant: "destructive" })
     } finally {
@@ -217,7 +320,7 @@ export default function AgentApplicationPage() {
             <CardContent>
               {hasPendingApplication ? (
                 <div className="text-center text-yellow-600 font-semibold py-8">
-                  You already have a pending agent application. Please wait for it to be reviewed.
+                  <RequestSubmittedMessage />
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -268,61 +371,109 @@ export default function AgentApplicationPage() {
                   {/* Shop Information */}
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold">Shop Information</h3>
-
+                    {/* Shop Name Field (moved above state) */}
                     <div className="space-y-2">
                       <Label htmlFor="shopName">Shop Name *</Label>
                       <Input
                         id="shopName"
                         placeholder="Enter your shop name"
                         value={formData.shopName}
-                        onChange={(e) => setFormData({ ...formData, shopName: e.target.value })}
+                        onChange={e => setFormData({ ...formData, shopName: e.target.value })}
                         required
                       />
                     </div>
-
+                    {/* State Dropdown */}
+                    <div className="space-y-2">
+                      <Label htmlFor="state">State *</Label>
+                      <Select
+                        value={stateId}
+                        onValueChange={value => setStateId(value)}
+                        required
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={states.length === 0 ? "Loading states..." : "Select state"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {states.map(state => (
+                            <SelectItem key={state.id} value={state.id}>{state.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* City Dropdown */}
+                    <div className="space-y-2">
+                      <Label htmlFor="city">City *</Label>
+                      <Select
+                        value={formData.city_id}
+                        onValueChange={value => setFormData(f => ({ ...f, city_id: value }))}
+                        required
+                        disabled={!stateId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={filteredCities.length === 0 ? "Select state first" : "Select city"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filteredCities.map(city => (
+                            <SelectItem key={city.id} value={city.id}>{city.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Mapbox Map Section (moved under city, only show if city is selected) */}
+                    {MAPBOX_TOKEN ? (
+                      formData.city_id && mapCenter && typeof window !== 'undefined' && (
+                        <div className="w-full h-72 my-4 rounded overflow-hidden border border-gray-300 relative">
+                          <Map
+                            ref={mapRef}
+                            initialViewState={{ longitude: mapCenter[0], latitude: mapCenter[1], zoom: 12 }}
+                            mapboxAccessToken={MAPBOX_TOKEN}
+                            mapStyle="mapbox://styles/mapbox/streets-v11"
+                            style={{ width: '100%', height: '100%' }}
+                            onClick={handleMapClick}
+                            onLoad={() => setMapLoaded(true)}
+                            maxBounds={bounds}
+                          >
+                            {pin && mapLoaded && (
+                              <Marker longitude={pin[0]} latitude={pin[1]} anchor="bottom">
+                                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <circle cx="16" cy="16" r="16" fill="#2563eb" fillOpacity="0.7" />
+                                  <rect x="14" y="8" width="4" height="12" rx="2" fill="#fff" />
+                                  <circle cx="16" cy="24" r="2" fill="#fff" />
+                                </svg>
+                              </Marker>
+                            )}
+                          </Map>
+                          <div className="text-xs text-gray-500 mt-1">Drop a pin to set your shop location. Address and pincode will autofill. You can edit the address if needed.</div>
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-red-600 text-sm font-semibold my-2">Mapbox token is missing. Please contact support.</div>
+                    )}
+                    {/* Shop Address Field */}
                     <div className="space-y-2">
                       <Label htmlFor="shopAddress">Shop Address *</Label>
                       <Textarea
                         id="shopAddress"
                         placeholder="Enter complete shop address"
                         value={formData.shopAddress}
-                        onChange={(e) => setFormData({ ...formData, shopAddress: e.target.value })}
+                        onChange={e => setFormData({ ...formData, shopAddress: e.target.value })}
                         required
                       />
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="city">City *</Label>
-                        <Select
-                          value={formData.city_id}
-                          onValueChange={value => setFormData({ ...formData, city_id: value })}
-                          required
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder={cities.length === 0 ? "Loading cities..." : "Select city"} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {cities.map(city => (
-                              <SelectItem key={city.id} value={city.id}>
-                                {city.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="pincode">Pincode *</Label>
-                        <Input
-                          id="pincode"
-                          placeholder="Enter pincode"
-                          value={formData.pincode}
-                          onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                          required
-                        />
-                      </div>
+                    {/* Add a visible, editable, required pincode field in the Shop Information section, after the shop address field */}
+                    <div className="space-y-2">
+                      <Label htmlFor="pincode">Pincode *</Label>
+                      <Input
+                        id="pincode"
+                        placeholder="Enter pincode"
+                        value={formData.pincode}
+                        onChange={e => setFormData({ ...formData, pincode: e.target.value })}
+                        required
+                      />
                     </div>
+                    {/* Hidden latitude/longitude fields */}
+                    <input type="hidden" name="latitude" value={formData.latitude} />
+                    <input type="hidden" name="longitude" value={formData.longitude} />
                   </div>
 
                   {/* Experience & Specializations */}
@@ -461,4 +612,15 @@ export default function AgentApplicationPage() {
       </div>
     </div>
   )
+}
+
+function RequestSubmittedMessage() {
+  const router = useRouter();
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[300px]">
+      <h2 className="text-xl font-semibold mb-4">Your agent request has been submitted.</h2>
+      <p className="mb-6 text-center">You'll be notified via email once reviewed.</p>
+      <Button onClick={() => router.push("/")}>Back to Homepage</Button>
+    </div>
+  );
 }

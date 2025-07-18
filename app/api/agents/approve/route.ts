@@ -31,21 +31,28 @@ export async function POST(req: NextRequest) {
     if (profileError) {
       return NextResponse.json({ message: 'Failed to update user role: ' + profileError.message }, { status: 500 });
     }
-    // 3. Insert into agents table with only the required fields
+    // 3. Insert into agents table with correct field mappings
+    // Extract main street from shop_address (up to first comma or full string)
+    let mainStreet = application.shop_address;
+    if (mainStreet && typeof mainStreet === 'string' && mainStreet.includes(',')) {
+      mainStreet = mainStreet.split(',')[0].trim();
+    }
     const { error: agentError } = await supabase.from('agents').insert([{
-      user_id: userId,
+      user_id: userId, // profiles.id
       shop_name: application.shop_name,
-      shop_address_street: application.shop_address,
-      shop_address_pincode: application.pincode,
-      id_proof: application.id_proof,
-      city_id: application.city_id,
-      specializations: application.specializations,
+      name: application.name,
       email: application.email,
       phone: application.phone,
+      id_proof: application.id_proof,
+      city_id: application.city_id,
+      state_id: application.state_id,
+      specializations: application.specializations,
+      latitude: application.latitude,
+      longitude: application.longitude,
       experience: application.experience,
-      name: application.name,
-      status: 'approved', // Explicitly set status to approved
-      // All other fields use default values
+      shop_address_pincode: application.pincode,
+      shop_address_street: mainStreet,
+      status: 'approved',
     }]);
     if (agentError) {
       return NextResponse.json({ message: 'Failed to insert agent: ' + agentError.message }, { status: 500 });
@@ -59,6 +66,17 @@ export async function POST(req: NextRequest) {
     }).eq('id', application.id);
     if (updateError) {
       return NextResponse.json({ message: 'Failed to update agent application: ' + updateError.message }, { status: 500 });
+    }
+    // 5. Insert notification for agent approval
+    const { error: notifError } = await supabase.from('notifications').insert([{
+      user_id: userId,
+      type: 'agent_approved',
+      title: 'Congratulations, you are now an agent.',
+      message: 'Your agent application has been approved. Welcome aboard!',
+      is_read: false,
+    }]);
+    if (notifError) {
+      return NextResponse.json({ message: 'Agent approved but failed to send notification: ' + notifError.message }, { status: 500 });
     }
     return NextResponse.json({ message: 'Agent approved successfully' }, { status: 200 });
   } catch (err: any) {

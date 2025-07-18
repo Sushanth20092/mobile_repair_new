@@ -23,10 +23,12 @@ CREATE TABLE public.agent_applications (
   city_id uuid,
   latitude double precision,
   longitude double precision,
+  state_id uuid,
   CONSTRAINT agent_applications_pkey PRIMARY KEY (id),
+  CONSTRAINT agent_applications_state_id_fkey FOREIGN KEY (state_id) REFERENCES public.states(id),
+  CONSTRAINT agent_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT agent_applications_reviewed_by_fkey FOREIGN KEY (reviewed_by) REFERENCES auth.users(id),
-  CONSTRAINT agent_applications_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
-  CONSTRAINT agent_applications_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+  CONSTRAINT agent_applications_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
 );
 CREATE TABLE public.agent_credentials (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -64,9 +66,11 @@ CREATE TABLE public.agents (
   name text NOT NULL DEFAULT ''::text,
   latitude double precision,
   longitude double precision,
+  state_id uuid,
   CONSTRAINT agents_pkey PRIMARY KEY (id),
-  CONSTRAINT agents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT agents_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id)
+  CONSTRAINT agents_city_id_fkey FOREIGN KEY (city_id) REFERENCES public.cities(id),
+  CONSTRAINT agents_state_id_fkey FOREIGN KEY (state_id) REFERENCES public.states(id),
+  CONSTRAINT agents_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.bookings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -137,8 +141,8 @@ CREATE TABLE public.chat_messages (
   is_read boolean DEFAULT false,
   timestamp timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_messages_pkey PRIMARY KEY (id),
-  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id),
-  CONSTRAINT chat_messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id)
+  CONSTRAINT chat_messages_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id),
+  CONSTRAINT chat_messages_sender_id_fkey FOREIGN KEY (sender_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.chat_participants (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -147,8 +151,8 @@ CREATE TABLE public.chat_participants (
   role text CHECK (role = ANY (ARRAY['user'::text, 'agent'::text, 'admin'::text])),
   joined_at timestamp with time zone DEFAULT now(),
   CONSTRAINT chat_participants_pkey PRIMARY KEY (id),
-  CONSTRAINT chat_participants_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id),
-  CONSTRAINT chat_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
+  CONSTRAINT chat_participants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
+  CONSTRAINT chat_participants_chat_id_fkey FOREIGN KEY (chat_id) REFERENCES public.chats(id)
 );
 CREATE TABLE public.chats (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -184,8 +188,8 @@ CREATE TABLE public.devices (
   category_id uuid NOT NULL,
   brand_id uuid NOT NULL,
   CONSTRAINT devices_pkey PRIMARY KEY (id),
-  CONSTRAINT devices_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
   CONSTRAINT devices_model_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id),
+  CONSTRAINT devices_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
   CONSTRAINT devices_brand_id_fkey FOREIGN KEY (brand_id) REFERENCES public.brands(id)
 );
 CREATE TABLE public.duration_types (
@@ -211,6 +215,17 @@ CREATE TABLE public.faults (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT faults_pkey PRIMARY KEY (id),
   CONSTRAINT faults_device_id_fkey FOREIGN KEY (device_id) REFERENCES public.devices(id)
+);
+CREATE TABLE public.notifications (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  title text NOT NULL,
+  message text NOT NULL,
+  type text NOT NULL CHECK (type = ANY (ARRAY['agent_approved'::text, 'agent_rejected'::text, 'booking_update'::text, 'admin_announcement'::text, 'general'::text])),
+  is_read boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notifications_pkey PRIMARY KEY (id),
+  CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.profiles (
   id uuid NOT NULL,
@@ -245,10 +260,10 @@ CREATE TABLE public.reviews (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT reviews_pkey PRIMARY KEY (id),
-  CONSTRAINT reviews_response_responded_by_fkey FOREIGN KEY (response_responded_by) REFERENCES public.agents(id),
+  CONSTRAINT reviews_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id),
   CONSTRAINT reviews_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id),
   CONSTRAINT reviews_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT reviews_booking_id_fkey FOREIGN KEY (booking_id) REFERENCES public.bookings(id)
+  CONSTRAINT reviews_response_responded_by_fkey FOREIGN KEY (response_responded_by) REFERENCES public.agents(id)
 );
 CREATE TABLE public.service_types (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

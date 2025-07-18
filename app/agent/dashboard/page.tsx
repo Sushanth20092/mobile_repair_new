@@ -275,10 +275,10 @@ export default function AgentDashboard() {
               {onlineStatusLoading && (
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
               )}
-            </div>
-            <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
-              <LogOut className="h-4 w-4 mr-1" /> Logout
-            </Button>
+          </div>
+          <Button variant="outline" onClick={handleLogout} className="flex items-center gap-2">
+            <LogOut className="h-4 w-4 mr-1" /> Logout
+          </Button>
           </div>
         </div>
 

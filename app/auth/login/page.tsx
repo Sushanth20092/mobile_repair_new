@@ -26,6 +26,8 @@ interface City {
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false)
+  const [showRegisterConfirmPassword, setShowRegisterConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("login")
   const router = useRouter()
@@ -99,6 +101,16 @@ export default function LoginPage() {
     return error
   }
 
+  // Password validation helper
+  function validatePassword(password: string): string {
+    if (!password) return "Password is required";
+    if (password.length < 6) return "Password must be at least 6 characters";
+    if (!/[A-Z]/.test(password)) return "Password must contain at least one uppercase letter";
+    if (!/[a-z]/.test(password)) return "Password must contain at least one lowercase letter";
+    if (!/[0-9]/.test(password)) return "Password must contain at least one number";
+    return "";
+  }
+
   // Handle field blur validation
   const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -155,7 +167,19 @@ export default function LoginPage() {
       if (profile.role === 'admin') {
         router.push('/admin/dashboard')
       } else if (profile.role === 'agent') {
-        router.push('/agent/dashboard')
+        // Check for unread agent_approved notification
+        const { data: notifications, error: notifError } = await supabaseClient
+          .from('notifications')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('is_read', false)
+          .eq('type', 'agent_approved')
+          .order('created_at', { ascending: false })
+        if (!notifError && notifications && notifications.length > 0) {
+          router.push('/notifications/welcome')
+        } else {
+          router.push('/agent/dashboard')
+        }
       } else if (profile.role === 'user') {
         router.push('/customer/dashboard')
       } else {
@@ -175,14 +199,18 @@ export default function LoginPage() {
     // Validate all fields before submission
     const validationErrors: Record<string, string> = {}
     Object.entries(registerData).forEach(([key, value]) => {
-      const error = validateField(key, value)
-      if (error) validationErrors[key] = error
+      let error = "";
+      if (key === "password") {
+        error = validatePassword(value as string);
+      } else if (key === "confirmPassword") {
+        if ((value as string) !== registerData.password) {
+          error = "Passwords do not match";
+        }
+      } else {
+        error = validateField(key, value);
+      }
+      if (error) validationErrors[key] = error;
     })
-    
-    // Special validation for password match
-    if (registerData.password !== registerData.confirmPassword) {
-      validationErrors.confirmPassword = "Passwords do not match"
-    }
     
     setErrors(validationErrors)
     
@@ -192,6 +220,19 @@ export default function LoginPage() {
     }
     
     try {
+      // Check for unique email and phone before registration
+      const { data: emailExists } = await supabaseClient.from('profiles').select('id').eq('email', registerData.email).single();
+      if (emailExists) {
+        setErrors(prev => ({ ...prev, email: 'Email already in use' }));
+        setIsLoading(false);
+        return;
+      }
+      const { data: phoneExists } = await supabaseClient.from('profiles').select('id').eq('phone', registerData.phone).single();
+      if (phoneExists) {
+        setErrors(prev => ({ ...prev, phone: 'Phone number already in use' }));
+        setIsLoading(false);
+        return;
+      }
       // Only send required fields to backend
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/auth/register`, {
         method: 'POST',
@@ -385,31 +426,53 @@ export default function LoginPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="register-password">Password *</Label>
-                      <Input
-                        id="register-password"
-                        name="password"
-                        type="password"
-                        placeholder="Create password"
-                        value={registerData.password}
-                        onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
-                        onBlur={handleBlur}
-                        required
-                      />
+                      <div className="relative">
+                        <Input
+                          id="register-password"
+                          name="password"
+                          type={showRegisterPassword ? "text" : "password"}
+                          placeholder="Create password"
+                          value={registerData.password}
+                          onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
+                          onBlur={handleBlur}
+                          required
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowRegisterPassword((v) => !v)}
+                        >
+                          {showRegisterPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                       {errors.password && <p className="text-sm text-red-500">{errors.password}</p>}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="confirm-password">Confirm Password *</Label>
-                      <Input
-                        id="confirm-password"
-                        name="confirmPassword"
-                        type="password"
-                        placeholder="Confirm password"
-                        value={registerData.confirmPassword}
-                        onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
-                        onBlur={handleBlur}
-                        required
-                      />
+                      <div className="relative">
+                        <Input
+                          id="confirm-password"
+                          name="confirmPassword"
+                          type={showRegisterConfirmPassword ? "text" : "password"}
+                          placeholder="Confirm password"
+                          value={registerData.confirmPassword}
+                          onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
+                          onBlur={handleBlur}
+                          required
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowRegisterConfirmPassword((v) => !v)}
+                        >
+                          {showRegisterConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
                       {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword}</p>}
                     </div>
                   </div>
