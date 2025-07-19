@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/api"
 
-type Role = "customer" | "agent" | "admin"
+type Role = "user" | "agent" | "admin"
 
 export interface User {
   id: string

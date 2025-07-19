@@ -76,6 +76,23 @@ export default function AgentDashboard() {
     // Removed waiting-approval redirect logic since only approved agents are in the agents table
   }, [user, router, profileLoading])
 
+  // Handle browser back button for agents - redirect to homepage instead of login
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      // If the user is an agent and tries to go back, redirect to homepage
+      if (user && user.role === 'agent') {
+        event.preventDefault()
+        router.replace('/')
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [user, router])
+
   // Fetch agent's online status
   useEffect(() => {
     const fetchAgentStatus = async () => {
@@ -222,7 +239,7 @@ export default function AgentDashboard() {
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await logout();
     router.push("/");
   };
 

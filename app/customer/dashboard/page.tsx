@@ -73,7 +73,7 @@ export default function CustomerDashboard() {
   }, [])
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await logout();
     router.push("/");
   };
 

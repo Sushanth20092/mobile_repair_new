@@ -108,8 +108,14 @@ export default function HomePage() {
   }
 
   const handleRepairNow = () => {
-    if (user) {
+    if (!user) {
+      router.push("/auth/login")
+    } else if (user.role === 'agent') {
+      router.push("/agent/dashboard")
+    } else if (user.role === 'user') {
       router.push("/customer/dashboard")
+    } else if (user.role === 'admin') {
+      router.push("/admin/dashboard")
     } else {
       router.push("/auth/login")
     }
@@ -200,7 +206,15 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
-                <Button variant="outline" onClick={() => router.push("/customer/dashboard")}>Dashboard</Button>
+                <Button variant="outline" onClick={() => {
+                  if (user.role === 'agent') {
+                    router.push("/agent/dashboard")
+                  } else if (user.role === 'user') {
+                    router.push("/customer/dashboard")
+                  } else if (user.role === 'admin') {
+                    router.push("/admin/dashboard")
+                  }
+                }}>Dashboard</Button>
                 <Button
                   variant="destructive"
                   onClick={() => {

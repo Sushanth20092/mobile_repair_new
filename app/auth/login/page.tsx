@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { Eye, EyeOff, Smartphone, ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { createClient } from '@supabase/supabase-js'
@@ -31,15 +31,41 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState("login")
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { login, signup, forgotPassword, user } = useAuth()
   const { toast } = useToast()
-  const [cities, setCities] = useState<City[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const supabaseClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
+
+  // Handle URL parameters for messages
+  useEffect(() => {
+    const message = searchParams.get('message')
+    
+    if (message === 'password_reset_success') {
+      toast({
+        title: "Password Reset Successful",
+        description: "Your password has been updated successfully. Please login with your new password.",
+      })
+      // Clean up the URL parameter
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.delete('message')
+      window.history.replaceState({}, '', newUrl.toString())
+    } else if (message === 'session_expired') {
+      toast({
+        title: "Session Expired",
+        description: "Your password reset session has expired. Please login again.",
+        variant: "destructive"
+      })
+      // Clean up the URL parameter
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.delete('message')
+      window.history.replaceState({}, '', newUrl.toString())
+    }
+  }, [searchParams, toast])
 
   // Login form state
   const [loginData, setLoginData] = useState({
@@ -125,20 +151,23 @@ export default function LoginPage() {
   }
 
   // Fetch cities on component mount
-  useEffect(() => {
-    const fetchCities = async () => {
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/cities/public`)
-        if (response.ok) {
-          const data = await response.json()
-          setCities(data.cities || [])
-        }
-      } catch (error) {
-        console.error('Error fetching cities:', error)
-      }
-    }
-    fetchCities()
-  }, [])
+  // useEffect(() => {
+  //   const fetchCities = async () => {
+  //     try {
+  //       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'
+  //       const response = await fetch(`${apiUrl}/api/cities/public`)
+  //       if (response.ok) {
+  //         const data = await response.json()
+  //         setCities(data.cities || [])
+  //       } else {
+  //         console.error('Failed to fetch cities:', response.status, response.statusText)
+  //       }
+  //     } catch (error) {
+  //       console.error('Error fetching cities:', error)
+  //     }
+  //   }
+  //   fetchCities()
+  // }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -176,9 +205,9 @@ export default function LoginPage() {
           .eq('type', 'agent_approved')
           .order('created_at', { ascending: false })
         if (!notifError && notifications && notifications.length > 0) {
-          router.push('/notifications/welcome')
+          router.replace('/notifications/welcome')
         } else {
-          router.push('/agent/dashboard')
+          router.replace('/agent/dashboard')
         }
       } else if (profile.role === 'user') {
         router.push('/customer/dashboard')
@@ -287,10 +316,23 @@ export default function LoginPage() {
       return
     }
     try {
-      await forgotPassword(loginData.email)
-      toast({ title: "Success", description: "Password reset email sent!" })
+      const response = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: loginData.email }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({ title: "Success", description: "Password reset link has been sent to your email." })
+      } else {
+        toast({ title: "Error", description: data.message || "Failed to send reset email", variant: "destructive" })
+      }
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to send reset email", variant: "destructive" })
+      toast({ title: "Error", description: "Failed to send reset email. Please try again.", variant: "destructive" })
     }
   }
 

@@ -489,7 +489,7 @@ export default function AdminDashboard() {
   }, [selectedTab]);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await logout();
     router.push("/");
   };
 
