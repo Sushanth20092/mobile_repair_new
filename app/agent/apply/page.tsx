@@ -21,9 +21,7 @@ import dynamic from 'next/dynamic';
 import { useRef, useCallback } from "react";
 import mapboxgl from 'mapbox-gl';
 import "@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css";
-const Geocoder = dynamic(() => import('@mapbox/mapbox-gl-geocoder'), { ssr: false });
-const Map = dynamic(() => import('react-map-gl').then(mod => mod.Map), { ssr: false });
-const Marker = dynamic(() => import('react-map-gl').then(mod => mod.Marker), { ssr: false });
+import MapboxPinDrop from '@/components/MapboxPinDrop';
 
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -420,34 +418,40 @@ export default function AgentApplicationPage() {
                       </Select>
                     </div>
                     {/* Mapbox Map Section (moved under city, only show if city is selected) */}
-                    {MAPBOX_TOKEN ? (
-                      formData.city_id && mapCenter && typeof window !== 'undefined' && (
-                        <div className="w-full h-72 my-4 rounded overflow-hidden border border-gray-300 relative">
-                          <Map
-                            ref={mapRef}
-                            initialViewState={{ longitude: mapCenter[0], latitude: mapCenter[1], zoom: 12 }}
-                            mapboxAccessToken={MAPBOX_TOKEN}
-                            mapStyle="mapbox://styles/mapbox/streets-v11"
-                            style={{ width: '100%', height: '100%' }}
-                            onClick={handleMapClick}
-                            onLoad={() => setMapLoaded(true)}
-                            maxBounds={bounds}
-                          >
-                            {pin && mapLoaded && (
-                              <Marker longitude={pin[0]} latitude={pin[1]} anchor="bottom">
-                                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                  <circle cx="16" cy="16" r="16" fill="#2563eb" fillOpacity="0.7" />
-                                  <rect x="14" y="8" width="4" height="12" rx="2" fill="#fff" />
-                                  <circle cx="16" cy="24" r="2" fill="#fff" />
-                                </svg>
-                              </Marker>
-                            )}
-                          </Map>
-                          <div className="text-xs text-gray-500 mt-1">Drop a pin to set your shop location. Address and pincode will autofill. You can edit the address if needed.</div>
-                        </div>
-                      )
-                    ) : (
-                      <div className="text-red-600 text-sm font-semibold my-2">Mapbox token is missing. Please contact support.</div>
+                    {formData.city_id && mapCenter && typeof window !== 'undefined' && (
+                      <div className="w-full h-72 my-4 rounded overflow-hidden border border-gray-300 relative">
+                        <MapboxPinDrop
+                          lat={pin ? pin[1] : null}
+                          lng={pin ? pin[0] : null}
+                          onPinDrop={(lat, lng) => {
+                            setPin([lng, lat]);
+                            setFormData(f => ({ ...f, latitude: lat.toString(), longitude: lng.toString() }));
+                          }}
+                          center={(() => {
+                            const city = cities.find(c => c.id === formData.city_id);
+                            return city && typeof city.longitude === 'number' && typeof city.latitude === 'number'
+                              ? [city.longitude, city.latitude]
+                              : mapCenter;
+                          })()}
+                          bounds={(() => {
+                            const city = cities.find(c => c.id === formData.city_id);
+                            return city && typeof city.longitude === 'number' && typeof city.latitude === 'number'
+                              ? [
+                                  city.longitude - 0.1,
+                                  city.latitude - 0.1,
+                                  city.longitude + 0.1,
+                                  city.latitude + 0.1
+                                ]
+                              : undefined;
+                          })()}
+                          mapboxToken={MAPBOX_TOKEN || ''}
+                          style={{ width: '100%', height: '100%', borderRadius: 8 }}
+                          onReverseGeocode={(address, pincode) => {
+                            setFormData(f => ({ ...f, shopAddress: address, pincode }));
+                          }}
+                        />
+                        <div className="text-xs text-gray-500 mt-1">Drop a pin to set your shop location. Address and pincode will autofill. You can edit the address if needed.</div>
+                      </div>
                     )}
                     {/* Shop Address Field */}
                     <div className="space-y-2">

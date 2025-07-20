@@ -23,6 +23,8 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { supabase } from "@/lib/api"
 import { formatGBP } from "@/lib/utils"
+import dynamic from "next/dynamic";
+import MapboxPinDrop from '@/components/MapboxPinDrop';
 
 type Category = { id: string; name: string };
 type Brand = { id: string; name: string; category_id: string };
@@ -33,6 +35,32 @@ interface Fault {
   name: string;
   price: number;
 }
+
+type StateType = { id: string; name: string };
+// Update CityType to include state_id
+type CityType = { id: string; name: string; state_id: string; pincodes?: string[]; latitude?: number; longitude?: number };
+
+// Agent type for Local Dropoff
+type Agent = {
+  id: string;
+  name: string;
+  shop_name: string;
+  shop_address_street: string;
+  shop_address_pincode: string;
+  phone: string;
+  rating_average: number;
+  rating_count: number;
+  completed_jobs: number;
+  latitude: number;
+  longitude: number;
+  city_id: string;
+  status: string;
+  distance?: number; // Computed distance from customer location
+};
+
+
+
+
 
 export default function BookRepairPage() {
   const router = useRouter()
@@ -62,6 +90,16 @@ export default function BookRepairPage() {
     paymentMethod: "",
     newModel: "", // Added for new model input
     customModel: "", // Added for custom model input
+    localDropoffAddress: null as any, // Added for local dropoff address
+    // Location data
+    location: {
+      street: "",
+      pincode: "",
+      latitude: null as number | null,
+      longitude: null as number | null,
+      state_id: "",
+      city_id: "",
+    },
   })
 
   // Reset form state on component mount
@@ -90,6 +128,15 @@ export default function BookRepairPage() {
       paymentMethod: "",
       newModel: "",
       customModel: "",
+      localDropoffAddress: null,
+      location: {
+        street: "",
+        pincode: "",
+        latitude: null,
+        longitude: null,
+        state_id: "",
+        city_id: "",
+      },
     });
     setSelectedFaults([]);
     setDeviceId("");
@@ -97,15 +144,18 @@ export default function BookRepairPage() {
 
   const steps = [
     { id: 1, title: "Device Details", description: "Select your device and issues" },
-    { id: 2, title: "Service Type", description: "Choose how you want to get it repaired" },
-    { id: 3, title: "Duration & Summary", description: "Review and confirm your booking" },
-    { id: 4, title: "Payment", description: "Complete your payment" },
+    { id: 2, title: "Select Location", description: "Choose your dropoff location" },
+    { id: 3, title: "Service Type", description: "Choose how you want to get it repaired" },
+    { id: 4, title: "Duration & Summary", description: "Review and confirm your booking" },
+    { id: 5, title: "Payment", description: "Complete your payment" },
   ]
 
-  const [cities, setCities] = useState<{ id: string, name: string, pincodes?: string[] }[]>([])
+  const [cities, setCities] = useState<CityType[]>([])
+  const [states, setStates] = useState<StateType[]>([])
   const [agents, setAgents] = useState<any[]>([])
   const [citiesLoading, setCitiesLoading] = useState(true)
-  const [agentsLoading, setAgentsLoading] = useState(true)
+  const [statesLoading, setStatesLoading] = useState(true)
+  const [agentsLoading, setAgentsLoading] = useState(false)
   const [userCity, setUserCity] = useState<string>("")
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -127,8 +177,16 @@ export default function BookRepairPage() {
   // Add state for duration types
   const [durationTypes, setDurationTypes] = useState<any[]>([]);
   const [durationTypesLoading, setDurationTypesLoading] = useState(true);
+  
+  // Agent filtering states for Local Dropoff
+  const [filteredAgents, setFilteredAgents] = useState<Agent[]>([]);
 
   useEffect(() => {
+    // Fetch states
+    supabase.from('states').select('*').then(({ data, error }) => {
+      setStates(data || [])
+      setStatesLoading(false)
+    })
     // Fetch cities
     supabase.from('cities').select('*').then(({ data, error }) => {
       setCities(data || [])
@@ -253,6 +311,15 @@ export default function BookRepairPage() {
     }
   }, [deviceId]);
 
+  // Filter agents when service type changes to local_dropoff
+  useEffect(() => {
+    if (formData.serviceType === "local_dropoff") {
+      filterAgentsForLocalDropoff();
+    } else {
+      setFilteredAgents([]);
+    }
+  }, [formData.serviceType, formData.location.city_id, formData.location.latitude, formData.location.longitude]);
+
   // Selected faults state: array of Fault objects
   const [selectedFaults, setSelectedFaults] = useState<Fault[]>([]);
 
@@ -321,6 +388,64 @@ export default function BookRepairPage() {
     if (formData.duration === "standard") basePrice += 500
     return basePrice
   }
+
+  // Haversine formula to calculate distance between two points
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distanceKm = R * c; // Distance in kilometers
+    const distanceMiles = distanceKm * 0.621371; // Convert to miles
+    return distanceMiles;
+  };
+
+  // Filter and sort agents for Local Dropoff
+  const filterAgentsForLocalDropoff = async () => {
+    if (!formData.location.city_id || !formData.location.latitude || !formData.location.longitude) {
+      setFilteredAgents([]);
+      return;
+    }
+
+    setAgentsLoading(true);
+    try {
+      const { data: agents, error } = await supabase
+        .from('agents')
+        .select('*')
+        .eq('city_id', formData.location.city_id)
+        .eq('status', 'approved')
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null);
+
+      if (error) {
+        console.error('Error fetching agents:', error);
+        setFilteredAgents([]);
+        return;
+      }
+
+      // Calculate distances and sort by distance
+      const agentsWithDistance = (agents || []).map(agent => ({
+        ...agent,
+        distance: calculateDistance(
+          formData.location.latitude!,
+          formData.location.longitude!,
+          agent.latitude,
+          agent.longitude
+        )
+      })).sort((a, b) => (a.distance || 0) - (b.distance || 0));
+
+      setFilteredAgents(agentsWithDistance);
+    } catch (error) {
+      console.error('Error filtering agents:', error);
+      setFilteredAgents([]);
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
 
   // Update handleSubmit to save selectedFaults in the booking
   const handleSubmit = async () => {
@@ -430,9 +555,29 @@ export default function BookRepairPage() {
         });
         return isValid;
       case 2:
+        isValid = Boolean(
+          formData.location.state_id && 
+          formData.location.city_id && 
+          formData.location.street && 
+          formData.location.pincode && 
+          formData.location.latitude && 
+          formData.location.longitude
+        );
+        console.log("📋 Step 2 (location) validation:", { 
+          state_id: Boolean(formData.location.state_id),
+          city_id: Boolean(formData.location.city_id),
+          street: Boolean(formData.location.street),
+          pincode: Boolean(formData.location.pincode),
+          latitude: Boolean(formData.location.latitude),
+          longitude: Boolean(formData.location.longitude),
+          isValid: isValid 
+        });
+        return isValid;
+      case 3:
         if (formData.serviceType === "local_dropoff") {
-          isValid = Boolean(formData.selectedAgent);
-          console.log("📋 Step 2 (local_dropoff) validation:", { 
+          isValid = Boolean(formData.location.street && formData.location.pincode && formData.selectedAgent);
+          console.log("📋 Step 3 (local_dropoff) validation:", { 
+            location: Boolean(formData.location.street && formData.location.pincode),
             selectedAgent: Boolean(formData.selectedAgent),
             isValid: isValid 
           });
@@ -440,17 +585,16 @@ export default function BookRepairPage() {
         } else if (formData.serviceType === "collection_delivery") {
           isValid = Boolean(
             formData.selectedAgent &&
-            formData.address &&
-            formData.pincode &&
+            formData.location.street &&
+            formData.location.pincode &&
             formData.collectionDate !== undefined &&
             formData.collectionTime &&
             formData.deliveryDate !== undefined &&
             formData.deliveryTime
           );
-          console.log("📋 Step 2 (collection_delivery) validation:", { 
+          console.log("📋 Step 3 (collection_delivery) validation:", { 
             selectedAgent: Boolean(formData.selectedAgent),
-            address: Boolean(formData.address),
-            pincode: Boolean(formData.pincode),
+            location: Boolean(formData.location.street && formData.location.pincode),
             collectionDate: Boolean(formData.collectionDate),
             collectionTime: Boolean(formData.collectionTime),
             deliveryDate: Boolean(formData.deliveryDate),
@@ -459,27 +603,25 @@ export default function BookRepairPage() {
           });
           return isValid;
         } else if (formData.serviceType === "postal") {
-          isValid = Boolean(formData.address && formData.pincode && formData.city_id);
-          console.log("📋 Step 2 (postal) validation:", { 
-            address: Boolean(formData.address),
-            pincode: Boolean(formData.pincode),
-            city_id: Boolean(formData.city_id),
+          isValid = Boolean(formData.location.street && formData.location.pincode && formData.location.city_id);
+          console.log("📋 Step 3 (postal) validation:", { 
+            location: Boolean(formData.location.street && formData.location.pincode && formData.location.city_id),
             isValid: isValid 
           });
           return isValid;
         }
         console.log("�� Step 2 validation: No service type selected");
         return false;
-      case 3:
+      case 4:
         isValid = Boolean(formData.duration);
-        console.log("📋 Step 3 validation:", { 
+        console.log("📋 Step 4 validation:", { 
           duration: Boolean(formData.duration),
           isValid: isValid 
         });
         return isValid;
-      case 4:
+      case 5:
         isValid = Boolean(formData.paymentMethod);
-        console.log("📋 Step 4 validation:", { 
+        console.log("📋 Step 5 validation:", { 
           paymentMethod: Boolean(formData.paymentMethod),
           isValid: isValid 
         });
@@ -489,6 +631,10 @@ export default function BookRepairPage() {
         return false;
     }
   }
+
+
+
+
 
   return (
     <DashboardLayout>
@@ -709,8 +855,168 @@ export default function BookRepairPage() {
               </motion.div>
             )}
 
-            {/* Step 2: Service Type */}
+            {/* Step 2: Select Location */}
             {currentStep === 2 && (
+              <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
+                <div className="space-y-4">
+                  <Label className="text-base font-medium">Select Your Dropoff Location</Label>
+                  
+                  {/* State and City Selection */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>State</Label>
+                      <Select 
+                        value={formData.location.state_id} 
+                        onValueChange={(value) => setFormData(f => ({ 
+                          ...f, 
+                          location: { ...f.location, state_id: value, city_id: "" } 
+                        }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select state" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {states.map(s => (
+                            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>City</Label>
+                      <Select 
+                        value={formData.location.city_id} 
+                        onValueChange={(value) => setFormData(f => ({ 
+                          ...f, 
+                          location: { ...f.location, city_id: value } 
+                        }))}
+                        disabled={!formData.location.state_id}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select city" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {cities.filter(c => c.state_id === formData.location.state_id).map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Map */}
+                  {formData.location.city_id && (
+                    <div className="space-y-2">
+                      <Label>Drop a Pin on the Map</Label>
+                      <div className="w-full" style={{ height: 400, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--muted)' }}>
+                        <MapboxPinDrop
+                          lat={formData.location.latitude}
+                          lng={formData.location.longitude}
+                          onPinDrop={(lat, lng) => setFormData(f => ({ 
+                            ...f, 
+                            location: { ...f.location, latitude: lat, longitude: lng } 
+                          }))}
+                          center={(() => {
+                            const selectedCity = cities.find(c => c.id === formData.location.city_id);
+                            return selectedCity && selectedCity.latitude && selectedCity.longitude 
+                              ? [selectedCity.longitude, selectedCity.latitude] 
+                              : [0, 0];
+                          })()}
+                          bounds={(() => {
+                            const selectedCity = cities.find(c => c.id === formData.location.city_id);
+                            if (selectedCity && selectedCity.latitude && selectedCity.longitude) {
+                              return [
+                                selectedCity.longitude - 0.1,
+                                selectedCity.latitude - 0.1,
+                                selectedCity.longitude + 0.1,
+                                selectedCity.latitude + 0.1
+                              ] as [number, number, number, number];
+                            }
+                            return [0, 0, 0, 0] as [number, number, number, number];
+                          })()}
+                          mapboxToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN || ''}
+                          style={{ width: '100%', height: 400, borderRadius: 8 }}
+                          onReverseGeocode={(address, pincode) => setFormData(f => ({ 
+                            ...f, 
+                            location: { ...f.location, street: address, pincode } 
+                          }))}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Address Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Street Address</Label>
+                      <Input 
+                        value={formData.location.street} 
+                        onChange={(e) => setFormData(f => ({ 
+                          ...f, 
+                          location: { ...f.location, street: e.target.value } 
+                        }))}
+                        placeholder="Street address"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Pincode</Label>
+                      <Input 
+                        value={formData.location.pincode} 
+                        onChange={(e) => setFormData(f => ({ 
+                          ...f, 
+                          location: { ...f.location, pincode: e.target.value } 
+                        }))}
+                        placeholder="Pincode"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coordinates */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Latitude</Label>
+                      <Input 
+                        value={formData.location.latitude ?? ""} 
+                        readOnly 
+                        placeholder="Will be set by map pin"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Longitude</Label>
+                      <Input 
+                        value={formData.location.longitude ?? ""} 
+                        readOnly 
+                        placeholder="Will be set by map pin"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Confirm Location Button */}
+                  <Button 
+                    className="w-full" 
+                    onClick={() => {
+                      if (formData.location.street && formData.location.pincode && 
+                          formData.location.latitude && formData.location.longitude) {
+                        nextStep();
+                      } else {
+                        toast({ 
+                          title: "Incomplete Location", 
+                          description: "Please fill in all location fields and drop a pin on the map", 
+                          variant: "destructive" 
+                        });
+                      }
+                    }}
+                    disabled={!formData.location.street || !formData.location.pincode || 
+                             !formData.location.latitude || !formData.location.longitude}
+                  >
+                    Confirm Location
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Step 3: Service Type */}
+            {currentStep === 3 && (
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                 {/* Service Type Selection */}
                 <div className="space-y-4">
@@ -759,101 +1065,146 @@ export default function BookRepairPage() {
                                   {/* Local Dropoff - Agent Selection */}
                                   {serviceType.name === "local_dropoff" && (
                                     <div className="space-y-4">
-                                      <Label className="text-base font-medium">Select Repair Center</Label>
-                                      <div className="space-y-3">
+                                      {/* Enhanced Location Summary */}
+                                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <MapPin className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                                          <h3 className="font-semibold text-blue-900 dark:text-blue-100">Your Dropoff Location</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">🏛️ State:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{states.find(s => s.id === formData.location.state_id)?.name || 'Not selected'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">🏙️ City:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{cities.find(c => c.id === formData.location.city_id)?.name || 'Not selected'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 md:col-span-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">📍 Street:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.street || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">📮 Pincode:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.pincode || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-blue-600 dark:text-blue-400 font-medium">🎯 Coordinates:</span>
+                                            <span className="text-gray-700 dark:text-gray-300 font-mono text-xs">
+                                              {formData.location.latitude?.toFixed(6)}, {formData.location.longitude?.toFixed(6)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Agent Selection */}
+                                      <div className="space-y-4">
+                                        <Label className="text-base font-medium">Select a Repair Agent</Label>
+                                        
                                         {agentsLoading ? (
-                                          <div>Loading agents...</div>
-                                        ) : agents.length === 0 ? (
-                                          <div className="text-muted-foreground">No agents are currently available for local dropoff in your area.</div>
+                                          <div className="flex items-center justify-center py-8">
+                                            <div className="text-muted-foreground">Loading available agents...</div>
+                                          </div>
+                                        ) : filteredAgents.length === 0 ? (
+                                          <div className="border rounded p-6 text-center">
+                                            <div className="text-muted-foreground mb-2">No agents available for Local Dropoff in your selected city.</div>
+                                            <div className="text-sm text-muted-foreground">Please try a different service type or location.</div>
+                                          </div>
                                         ) : (
-                                          agents.map((agent) => (
-                                            <div
-                                              key={agent.id}
-                                              className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                                                formData.selectedAgent === agent.id
-                                                  ? "border-primary bg-primary/5"
-                                                  : "border-muted hover:border-primary/50"
-                                              }`}
-                                              onClick={() => setFormData({ ...formData, selectedAgent: agent.id })}
-                                            >
-                                              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
-                                                <div>
-                                                  <h3 className="font-medium text-lg">{agent.name}</h3>
-                                                  <div className="text-sm text-muted-foreground mb-1">
-                                                    {agent.shop_name} <span className="mx-2">|</span> {agent.shop_address_street}, {agent.shop_address_pincode}
-                                                  </div>
-                                                  <div className="flex flex-wrap gap-2 mb-1">
-                                                    {Array.isArray(agent.specializations) && agent.specializations.length > 0 && (agent.specializations as string[]).map((spec: string, idx: number) => (
-                                                      <span key={idx} className="inline-block bg-muted px-2 py-0.5 rounded text-xs">{spec}</span>
-                                                    ))}
+                                          <RadioGroup
+                                            value={formData.selectedAgent}
+                                            onValueChange={(value) => setFormData({ ...formData, selectedAgent: value })}
+                                          >
+                                            <div className="space-y-3">
+                                              {filteredAgents.map((agent) => (
+                                                <div
+                                                  key={agent.id}
+                                                  className={`border rounded-lg p-4 cursor-pointer transition-colors ${
+                                                    formData.selectedAgent === agent.id
+                                                      ? "border-primary bg-primary/5"
+                                                      : "border-muted hover:border-muted-foreground/50"
+                                                  }`}
+                                                  onClick={() => setFormData({ ...formData, selectedAgent: agent.id })}
+                                                >
+                                                  <div className="flex items-center space-x-3">
+                                                    <RadioGroupItem value={agent.id} id={agent.id} />
+                                                    <div className="flex-1">
+                                                      <div className="flex items-center justify-between mb-2">
+                                                        <h3 className="font-semibold text-lg">{agent.shop_name}</h3>
+                                                        <Badge variant="secondary" className="text-xs">
+                                                          {agent.distance?.toFixed(2)} miles away
+                                                        </Badge>
+                                                      </div>
+                                                      
+                                                      <div className="space-y-1 text-sm text-muted-foreground">
+                                                        <div className="flex items-center gap-1">
+                                                          <span>👨</span>
+                                                          <span>{agent.name}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                          <span>📍</span>
+                                                          <span>{agent.shop_address_street}, {agent.shop_address_pincode}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                          <span>📞</span>
+                                                          <span>{agent.phone}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                          <span>⭐</span>
+                                                          <span>
+                                                            {agent.rating_average?.toFixed(1) || 'N/A'} ★ 
+                                                            ({agent.rating_count || 0} reviews)
+                                                          </span>
+                                                        </div>
+                                                        {agent.completed_jobs && (
+                                                          <div className="flex items-center gap-1">
+                                                            <span>📊</span>
+                                                            <span>{agent.completed_jobs} completed repairs</span>
+                                                          </div>
+                                                        )}
+                                                      </div>
+                                                    </div>
                                                   </div>
                                                 </div>
-                                                <div className="flex flex-col items-end gap-1 min-w-[120px]">
-                                                  <div className="flex items-center gap-1 text-sm">
-                                                    <span className="text-yellow-500">★</span>
-                                                    <span className="font-semibold">{agent.rating_average ? agent.rating_average.toFixed(1) : 'N/A'}</span>
-                                                    <span className="text-muted-foreground">({agent.rating_count || 0} reviews)</span>
-                                                  </div>
-                                                  <div className="text-xs text-muted-foreground">{agent.completed_jobs || 0} jobs completed</div>
-                                                  {agent.last_seen && (
-                                                    <div className="text-xs text-muted-foreground">Last seen: {new Date(agent.last_seen).toLocaleString()}</div>
-                                                  )}
-                                                </div>
-                                              </div>
+                                              ))}
                                             </div>
-                                          ))
+                                          </RadioGroup>
                                         )}
                                       </div>
                                     </div>
                                   )}
 
-                                  {/* Collection & Delivery - Address Form */}
+                                  {/* Collection & Delivery - Address Display */}
                                   {serviceType.name === "collection_delivery" && (
                                     <div className="space-y-4">
                                       <Label className="text-base font-medium">Collection & Delivery Address</Label>
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                          <Label htmlFor="address">Address</Label>
-                                          <Textarea
-                                            id="address"
-                                            placeholder="Enter your full address"
-                                            value={formData.address}
-                                            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                          />
+                                      <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <MapPin className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                          <h3 className="font-semibold text-green-900 dark:text-green-100">Your Collection Address</h3>
                                         </div>
-                                        <div className="space-y-4">
-                                          <div className="space-y-2">
-                                            <Label htmlFor="pincode">Pincode</Label>
-                                            <Input
-                                              id="pincode"
-                                              placeholder="Enter pincode"
-                                              value={formData.pincode}
-                                              onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                                            />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-green-600 dark:text-green-400 font-medium">🏛️ State:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{states.find(s => s.id === formData.location.state_id)?.name || 'Not selected'}</span>
                                           </div>
-                                          <div className="space-y-2">
-                                            <Label htmlFor="city">City</Label>
-                                            <Select
-                                              value={formData.city_id}
-                                              onValueChange={(value) => setFormData({ ...formData, city_id: value })}
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select city" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {citiesLoading ? (
-                                                  <div>Loading cities...</div>
-                                                ) : cities.length === 0 ? (
-                                                  <div>No cities available.</div>
-                                                ) : (
-                                                  cities.map((city) => (
-                                                    <SelectItem key={city.id} value={city.id}>
-                                                      {city.name}
-                                                    </SelectItem>
-                                                  ))
-                                                )}
-                                              </SelectContent>
-                                            </Select>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-green-600 dark:text-green-400 font-medium">🏙️ City:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{cities.find(c => c.id === formData.location.city_id)?.name || 'Not selected'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 md:col-span-2">
+                                            <span className="text-green-600 dark:text-green-400 font-medium">📍 Street:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.street || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-green-600 dark:text-green-400 font-medium">📮 Pincode:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.pincode || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-green-600 dark:text-green-400 font-medium">🎯 Coordinates:</span>
+                                            <span className="text-gray-700 dark:text-gray-300 font-mono text-xs">
+                                              {formData.location.latitude?.toFixed(6)}, {formData.location.longitude?.toFixed(6)}
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
@@ -942,61 +1293,52 @@ export default function BookRepairPage() {
                                     </div>
                                   )}
 
-                                  {/* Postal Service - Address Form */}
+                                  {/* Postal Service - Address Display */}
                                   {serviceType.name === "postal" && (
                                     <div className="space-y-4">
                                       <Label className="text-base font-medium">Postal Address</Label>
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                          <Label htmlFor="postalAddress">Address</Label>
-                                          <Textarea
-                                            id="postalAddress"
-                                            placeholder="Enter your full address"
-                                            value={formData.address}
-                                            onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                          />
+                                      <div className="bg-gradient-to-r from-purple-50 to-violet-50 dark:from-purple-950/20 dark:to-violet-950/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <MapPin className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+                                          <h3 className="font-semibold text-purple-900 dark:text-purple-100">Your Postal Address</h3>
                                         </div>
-                                        <div className="space-y-4">
-                                          <div className="space-y-2">
-                                            <Label htmlFor="postalPincode">Pincode</Label>
-                                            <Input
-                                              id="postalPincode"
-                                              placeholder="Enter pincode"
-                                              value={formData.pincode}
-                                              onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                                            />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-purple-600 dark:text-purple-400 font-medium">🏛️ State:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{states.find(s => s.id === formData.location.state_id)?.name || 'Not selected'}</span>
                                           </div>
-                                          <div className="space-y-2">
-                                            <Label htmlFor="postalCity">City</Label>
-                                            <Select
-                                              value={formData.city_id}
-                                              onValueChange={(value) => setFormData({ ...formData, city_id: value })}
-                                            >
-                                              <SelectTrigger>
-                                                <SelectValue placeholder="Select city" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {citiesLoading ? (
-                                                  <div>Loading cities...</div>
-                                                ) : cities.length === 0 ? (
-                                                  <div>No cities available.</div>
-                                                ) : (
-                                                  cities.map((city) => (
-                                                    <SelectItem key={city.id} value={city.id}>
-                                                      {city.name}
-                                                    </SelectItem>
-                                                  ))
-                                                )}
-                                              </SelectContent>
-                                            </Select>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-purple-600 dark:text-purple-400 font-medium">🏙️ City:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{cities.find(c => c.id === formData.location.city_id)?.name || 'Not selected'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2 md:col-span-2">
+                                            <span className="text-purple-600 dark:text-purple-400 font-medium">📍 Street:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.street || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-purple-600 dark:text-purple-400 font-medium">📮 Pincode:</span>
+                                            <span className="text-gray-700 dark:text-gray-300">{formData.location.pincode || 'Not set'}</span>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-purple-600 dark:text-purple-400 font-medium">🎯 Coordinates:</span>
+                                            <span className="text-gray-700 dark:text-gray-300 font-mono text-xs">
+                                              {formData.location.latitude?.toFixed(6)}, {formData.location.longitude?.toFixed(6)}
+                                            </span>
                                           </div>
                                         </div>
                                       </div>
-                                      <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg">
-                                        <p className="text-sm text-blue-800 dark:text-blue-200">
-                                          <strong>Note:</strong> For postal service, our admin will assign the best available agent in
-                                          your city. You'll receive agent details once assigned.
-                                        </p>
+                                      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/20 dark:to-cyan-950/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg">
+                                        <div className="flex items-start gap-3">
+                                          <div className="text-blue-600 dark:text-blue-400 text-lg">ℹ️</div>
+                                          <div>
+                                            <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-1">
+                                              Postal Service Information
+                                            </p>
+                                            <p className="text-sm text-blue-700 dark:text-blue-300">
+                                              Our admin will assign the best available agent in your city. You'll receive agent details once assigned.
+                                            </p>
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
                                   )}
@@ -1089,7 +1431,9 @@ export default function BookRepairPage() {
                       <div className="flex justify-between">
                         <span>Repair Center:</span>
                         <span className="font-medium">
-                          {agents.find((a) => a.id === formData.selectedAgent)?.name}
+                          {filteredAgents.find((a) => a.id === formData.selectedAgent)?.shop_name || 
+                           agents.find((a) => a.id === formData.selectedAgent)?.name || 
+                           'Selected Agent'}
                         </span>
                       </div>
                     )}
@@ -1165,6 +1509,16 @@ export default function BookRepairPage() {
                       <span>Service:</span>
                       <span className="capitalize">{formData.serviceType?.replace("-", " ")}</span>
                     </div>
+                    {formData.selectedAgent && (
+                      <div className="flex justify-between">
+                        <span>Agent:</span>
+                        <span>
+                          {filteredAgents.find((a) => a.id === formData.selectedAgent)?.shop_name || 
+                           agents.find((a) => a.id === formData.selectedAgent)?.name || 
+                           'Selected Agent'}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span>Duration:</span>
                       <span className="capitalize">{formData.duration}</span>
