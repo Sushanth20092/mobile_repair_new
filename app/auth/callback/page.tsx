@@ -60,7 +60,7 @@ export default function AuthCallback() {
           redirectPath = "/agent/dashboard";
         } else if (profile.role === 'user' || profile.role === 'customer') {
           // Support both 'user' and 'customer' as possible role names
-          redirectPath = "/customer/dashboard";
+          redirectPath = "/";
         }
         setTimeout(() => {
           router.replace(redirectPath);

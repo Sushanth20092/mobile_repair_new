@@ -210,7 +210,7 @@ export default function LoginPage() {
           router.replace('/agent/dashboard')
         }
       } else if (profile.role === 'user') {
-        router.push('/customer/dashboard')
+        router.push('/')
       } else {
         router.push('/')
       }

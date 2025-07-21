@@ -423,6 +423,7 @@ export default function BookRepairPage() {
         .select('*')
         .eq('city_id', formData.location.city_id)
         .eq('status', 'approved')
+        .eq('is_online', true)
         .not('latitude', 'is', null)
         .not('longitude', 'is', null);
 
@@ -646,10 +647,10 @@ export default function BookRepairPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
-          <Link href="/customer/dashboard">
+          <Link href="/">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
+              Back to Home
             </Button>
           </Link>
           <div>
@@ -1113,8 +1114,7 @@ export default function BookRepairPage() {
                                           </div>
                                         ) : filteredAgents.length === 0 ? (
                                           <div className="border rounded p-6 text-center">
-                                            <div className="text-muted-foreground mb-2">No agents available for Local Dropoff in your selected city.</div>
-                                            <div className="text-sm text-muted-foreground">Please try a different service type or location.</div>
+                                            <div className="text-muted-foreground mb-2">No agents are currently available in the selected city. Please try again later or choose a different service type.</div>
                                           </div>
                                         ) : (
                                           <RadioGroup

@@ -53,7 +53,7 @@ const getStatusIcon = (status: string) => {
   }
 }
 
-export default function CustomerDashboard() {
+export default function CustomerProfilePage() {
   const { user, logout } = useAuth()
   const router = useRouter()
   const [bookings, setBookings] = useState<any[]>([])
@@ -90,8 +90,8 @@ export default function CustomerDashboard() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold">Welcome back, {user?.name}!</h1>
-            <p className="text-muted-foreground">Manage your device repairs and track progress</p>
+            <h1 className="text-3xl font-bold">My Profile</h1>
+            <p className="text-muted-foreground">Manage your profile and device repairs</p>
           </div>
           <div className="flex gap-2">
             <Link href="/customer/book-repair">
@@ -100,10 +100,6 @@ export default function CustomerDashboard() {
                 Book New Repair
               </Button>
             </Link>
-            <Button size="lg" variant="outline" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
           </div>
         </div>
 
@@ -276,8 +272,7 @@ export default function CustomerDashboard() {
                             <div className="flex items-center gap-4 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                Completed:{" "}
-                                {booking.completedDate ? new Date(booking.completedDate).toLocaleDateString() : "N/A"}
+                                Completed: {booking.completedDate ? new Date(booking.completedDate).toLocaleDateString() : "N/A"}
                               </span>
                             </div>
                           </div>
@@ -310,4 +305,4 @@ export default function CustomerDashboard() {
       </div>
     </DashboardLayout>
   )
-}
+} 
