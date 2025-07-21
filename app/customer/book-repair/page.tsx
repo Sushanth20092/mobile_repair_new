@@ -91,6 +91,8 @@ export default function BookRepairPage() {
     newModel: "", // Added for new model input
     customModel: "", // Added for custom model input
     localDropoffAddress: null as any, // Added for local dropoff address
+    address_landmark: "", // NEW FIELD
+    location_type: "Home", // NEW FIELD, default to Home
     // Location data
     location: {
       street: "",
@@ -129,6 +131,8 @@ export default function BookRepairPage() {
       newModel: "",
       customModel: "",
       localDropoffAddress: null,
+      address_landmark: "", // NEW FIELD
+      location_type: "Home", // NEW FIELD
       location: {
         street: "",
         pincode: "",
@@ -382,12 +386,13 @@ export default function BookRepairPage() {
     return maxDate
   }
 
+  // Calculate total price: sum of selected faults + duration price
   const calculatePrice = () => {
-    let basePrice = 2000
-    if (formData.duration === "express") basePrice += 1000
-    if (formData.duration === "standard") basePrice += 500
-    return basePrice
-  }
+    const faultsTotal = selectedFaults.reduce((sum, fault) => sum + (fault.price || 0), 0);
+    const selectedDurationType = durationTypes.find(dt => dt.name === formData.duration);
+    const durationPrice = selectedDurationType ? (selectedDurationType.extra_charge || 0) : 0;
+    return faultsTotal + durationPrice;
+  };
 
   // Haversine formula to calculate distance between two points
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -860,7 +865,6 @@ export default function BookRepairPage() {
               <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                 <div className="space-y-4">
                   <Label className="text-base font-medium">Select Your Dropoff Location</Label>
-                  
                   {/* State and City Selection */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -903,7 +907,6 @@ export default function BookRepairPage() {
                       </Select>
                     </div>
                   </div>
-
                   {/* Map */}
                   {formData.location.city_id && (
                     <div className="space-y-2">
@@ -944,7 +947,6 @@ export default function BookRepairPage() {
                       </div>
                     </div>
                   )}
-
                   {/* Address Fields */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -970,27 +972,31 @@ export default function BookRepairPage() {
                       />
                     </div>
                   </div>
-
-                  {/* Coordinates */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Latitude</Label>
-                      <Input 
-                        value={formData.location.latitude ?? ""} 
-                        readOnly 
-                        placeholder="Will be set by map pin"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Longitude</Label>
-                      <Input 
-                        value={formData.location.longitude ?? ""} 
-                        readOnly 
-                        placeholder="Will be set by map pin"
-                      />
-                    </div>
+                  {/* Landmark Field */}
+                  <div className="space-y-2">
+                    <Label>Landmark</Label>
+                    <Input
+                      value={formData.address_landmark}
+                      onChange={e => setFormData(f => ({ ...f, address_landmark: e.target.value }))}
+                      placeholder="Near mall, park, etc."
+                    />
                   </div>
-
+                  {/* Location Type Field */}
+                  <div className="space-y-2">
+                    <Label>Location Type</Label>
+                    <RadioGroup
+                      value={formData.location_type}
+                      onValueChange={val => setFormData(f => ({ ...f, location_type: val }))}
+                      className="flex flex-row gap-4"
+                    >
+                      <RadioGroupItem value="Home" id="location-type-home" />
+                      <Label htmlFor="location-type-home">Home</Label>
+                      <RadioGroupItem value="Work" id="location-type-work" />
+                      <Label htmlFor="location-type-work">Work</Label>
+                      <RadioGroupItem value="Other" id="location-type-other" />
+                      <Label htmlFor="location-type-other">Other</Label>
+                    </RadioGroup>
+                  </div>
                   {/* Confirm Location Button */}
                   <Button 
                     className="w-full" 
@@ -1416,7 +1422,7 @@ export default function BookRepairPage() {
                     <div className="flex justify-between">
                       <span>Device:</span>
                       <span className="font-medium">
-                        {formData.brand} {formData.model}
+                        {brands.find(b => b.id === formData.brand)?.name || formData.brand} {formData.model}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1441,10 +1447,27 @@ export default function BookRepairPage() {
                       <span>Duration:</span>
                       <span className="font-medium capitalize">{formData.duration}</span>
                     </div>
+                    {/* Faults Total */}
+                    <div className="flex justify-between">
+                      <span>Faults Total:</span>
+                      <span>{formatGBP(selectedFaults.reduce((sum, fault) => sum + (fault.price || 0), 0))}</span>
+                    </div>
+                    {/* Duration Price */}
+                    {(() => {
+                      const selectedDurationType = durationTypes.find(dt => dt.name === formData.duration);
+                      if (!selectedDurationType) return null;
+                      return (
+                        <div className="flex justify-between">
+                          <span>Duration Price:</span>
+                          <span>{selectedDurationType.label} ({formatGBP(selectedDurationType.extra_charge || 0)})</span>
+                        </div>
+                      );
+                    })()}
+                    {/* Total Amount */}
                     <div className="border-t pt-3">
                       <div className="flex justify-between text-lg font-semibold">
                         <span>Total Amount:</span>
-                        <span>£{formatGBP(calculatePrice())}</span>
+                        <span>{formatGBP(calculatePrice())}</span>
                       </div>
                     </div>
                   </div>
@@ -1502,7 +1525,7 @@ export default function BookRepairPage() {
                     <div className="flex justify-between">
                       <span>Device:</span>
                       <span>
-                        {formData.brand} {formData.model}
+                        {brands.find(b => b.id === formData.brand)?.name || formData.brand} {formData.model}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -1529,7 +1552,7 @@ export default function BookRepairPage() {
                     </div>
                     <div className="border-t pt-2 flex justify-between font-semibold">
                       <span>Total:</span>
-                      <span>£{formatGBP(calculatePrice())}</span>
+                      <span>{formatGBP(calculatePrice())}</span>
                     </div>
                   </div>
                 </div>
