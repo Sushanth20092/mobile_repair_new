@@ -30,7 +30,7 @@ jobs:
         with:
           projectBaseDir: .
           args: >
-            -Dsonar.projectKey=Sushanth20092_mobile_repair
+            -Dsonar.projectKey=Sushanth20092_mobile_repair_new
             -Dsonar.organization=sushanth20092
             -Dsonar.sources=.
             -Dsonar.verbose=true
